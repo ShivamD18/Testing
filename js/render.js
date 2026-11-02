@@ -212,7 +212,7 @@
     const note = r && r.note ? r.note : 'Image not added yet';
     return (
       '<span class="img-missing" data-ref="' + escapeHTML(img.ref) + '">' +
-      '<span class="img-missing-icon" aria-hidden="true">🖼</span>' +
+      (root.FC && root.FC.icon ? root.FC.icon('image') : '') +
       '<span><strong>' + escapeHTML(note) + ':</strong> <code>' + escapeHTML(img.ref) + '</code>' +
       (img.alt ? '<br><em>' + escapeHTML(img.alt) + '</em>' : '') + '</span></span>'
     );

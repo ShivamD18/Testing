@@ -76,9 +76,31 @@ async function main() {
 
     // Home: empty state
     await page.goto(base);
-    await page.getByRole('heading', { name: 'Make your first deck' }).waitFor();
+    await page.getByRole('heading', { name: 'Turn your lectures into flashcards' }).waitFor();
     await shot('01-home-empty');
     step('home shows the empty state');
+
+    // Appearance picker: season, day/night and motion are applied and remembered
+    await page.locator('#season-btn').click();
+    await page.locator('#appearance [data-s="winter"]').click();
+    await page.locator('#appearance [data-t="dark"]').click();
+    await page.locator('#motion-toggle').uncheck();
+    const look = () => page.evaluate(() => ({ ...document.documentElement.dataset }));
+    assert.deepEqual((({ season, mode, motion }) => ({ season, mode, motion }))(await look()), { season: 'winter', mode: 'dark', motion: 'off' });
+    await page.keyboard.press('Escape');
+    await page.locator('#appearance').waitFor({ state: 'detached' });
+    await page.reload();
+    await page.locator('.hero').waitFor();
+    assert.equal((await look()).season, 'winter');
+    assert.equal((await look()).mode, 'dark');
+    await page.locator('#season-btn').click();
+    await page.locator('#appearance [data-s="auto"]').click();
+    await page.locator('#appearance [data-t="light"]').click();
+    await page.locator('#motion-toggle').check();
+    await page.mouse.click(5, 400); // click outside closes the picker
+    await page.locator('#appearance').waitFor({ state: 'detached' });
+    assert.equal((await look()).mode, 'light');
+    step('appearance picker switches season, night mode and motion, and remembers them');
 
     // Prompt page copies the prompt
     await page.goto(base + '#/prompt');
@@ -153,6 +175,8 @@ async function main() {
     step('study session: flip, rate, lightbox, again-requeue, undo, finish');
 
     await page.goto(deckUrl);
+    await page.locator('.stats').waitFor(); // the deck page waits for pending saves
+    assert.match(await page.locator('.stats').innerText(), /0\s*due\s*0\s*new\s*4\s*learned/);
     await page.reload();
     await page.locator('.stats').waitFor();
     assert.match(await page.locator('.stats').innerText(), /0\s*due\s*0\s*new\s*4\s*learned/);

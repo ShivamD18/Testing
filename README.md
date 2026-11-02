@@ -55,6 +55,7 @@ The importer also reads these formats (auto-detected):
 
 ## Features
 
+- **Seasons theme**: an animated landscape sits behind frosted-glass panels, with petals in spring, drifting light (or fireflies at night) in summer, falling leaves in autumn, and snow in winter. Choose a season, match today's date, or cycle through all four from the season button in the top bar. Each season also has a night version with stars and a moon. You can turn the animation off there, and it stays still automatically if your device asks for reduced motion.
 - **Import preview**: shows each card rendered as you paste, with LaTeX errors and missing images flagged before you create the deck.
 - **PDF → images**: drop the lecture PDF once, and cards can show any page. Click an image to zoom in.
 - **Spaced repetition** (simplified SM‑2, like Anki): Again / Hard / Good / Easy, with the next interval shown on each button and a daily limit for new cards (20 by default, set per deck).
@@ -62,7 +63,7 @@ The importer also reads these formats (auto-detected):
 - **Editing**: browse, search and filter cards (due, new, often forgotten), and edit them with a live preview. Paste a screenshot into the editor to add it as an image. While studying, press `E` to fix the current card.
 - **Add cards** to an existing deck. Exact duplicates are skipped.
 - **Export**: copy or download a deck in Q:/A: format, or download a full backup that includes images and progress.
-- Light and dark themes, and layouts for phone and desktop.
+- Layouts for phone and desktop, a daily study streak, and a little confetti when you finish a session.
 
 ### Keyboard shortcuts (study)
 
@@ -76,16 +77,18 @@ The importer also reads these formats (auto-detected):
 
 ## Development
 
-There is no build step. The libraries are vendored in `vendor/`: KaTeX 0.18.11, marked 18.0.14, DOMPurify 3.4.16 and pdf.js 6.4.299.
+There is no build step. The libraries are vendored in `vendor/`: KaTeX 0.18.11, marked 18.0.14, DOMPurify 3.4.16, pdf.js 6.4.299, the Plus Jakarta Sans font, and icons from Lucide.
 
 ```
 index.html        app shell
-css/styles.css    styles (light/dark tokens at the top)
+css/styles.css    styles (season palettes and day/night tokens at the top)
 js/parser.js      paste formats → cards
 js/render.js      Markdown + LaTeX + image rendering
 js/images.js      image matching, PDF → page images
 js/srs.js         spaced-repetition scheduling
 js/db.js          IndexedDB storage
+js/scene.js       animated seasonal landscape and particles
+js/icons.js       icon set (Lucide)
 js/prompt.js      the Claude prompt (kept in sync with CLAUDE_PROMPT.md)
 js/app.js         views and routing
 ```
