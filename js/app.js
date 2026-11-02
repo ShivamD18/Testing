@@ -1,7 +1,7 @@
 /* Flashcards app: routing and views. */
 (function () {
   'use strict';
-  const { parser, render, srs, images: Img, db, prompt, sample } = window.FC;
+  const { parser, render, srs, images: Img, db, prompt, sample, icon, scene } = window.FC;
   const h = render.escapeHTML;
   const $app = document.getElementById('app');
   const DEFAULT_NEW_PER_DAY = 20;
@@ -54,7 +54,7 @@
   let toastTimer;
   function toast(msg, kind) {
     const el = document.getElementById('toast');
-    el.textContent = msg;
+    el.innerHTML = (kind === 'ok' ? icon('check') : kind === 'error' ? icon('x') : '') + `<span>${h(msg)}</span>`;
     el.className = 'toast show' + (kind ? ' toast-' + kind : '');
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => (el.className = 'toast'), kind === 'error' ? 6000 : 3000);
@@ -232,37 +232,209 @@
     m.addEventListener('click', closeModal);
   });
 
-  // ------------------------------------------------------------------ theme
-  const svgIcon = (body) => `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
-  const THEME_ICONS = {
-    auto: svgIcon('<circle cx="12" cy="12" r="9"/><path d="M12 3v18a9 9 0 0 0 0-18z" fill="currentColor"/>'),
-    light: svgIcon('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>'),
-    dark: svgIcon('<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>'),
+  // ------------------------------------------------------------- appearance
+  const SEASON_INFO = {
+    spring: { label: 'Spring', icon: 'flower-2', note: 'Cherry blossom' },
+    summer: { label: 'Summer', icon: 'sun', note: 'Long bright days' },
+    autumn: { label: 'Autumn', icon: 'leaf', note: 'Golden hour' },
+    winter: { label: 'Winter', icon: 'snowflake', note: 'Fresh snow' },
   };
+  const prefs = {
+    season: local.get('fc-season', 'auto'), // auto | cycle | spring | summer | autumn | winter
+    theme: local.get('fc-theme', 'auto'), // auto | light | dark
+    motion: local.get('fc-motion', true),
+  };
+  const darkQuery = window.matchMedia ? matchMedia('(prefers-color-scheme: dark)') : { matches: false, addEventListener() {} };
+  const reducedQuery = window.matchMedia ? matchMedia('(prefers-reduced-motion: reduce)') : { matches: false };
+  let cycleSeason = null;
+  let cycleTimer = null;
 
-  function applyTheme(t) {
+  function currentSeason() {
+    if (SEASON_INFO[prefs.season]) return prefs.season;
+    if (prefs.season === 'cycle' && cycleSeason) return cycleSeason;
+    return scene.seasonFor(new Date());
+  }
+
+  function isNight() {
+    return prefs.theme === 'dark' || (prefs.theme !== 'light' && darkQuery.matches);
+  }
+
+  function applyAppearance() {
+    const season = currentSeason();
+    const night = isNight();
     const root = document.documentElement;
-    if (t === 'light' || t === 'dark') root.dataset.theme = t;
-    else delete root.dataset.theme;
-    const btn = document.getElementById('theme-toggle');
-    if (btn) {
-      const label = { light: 'Light theme', dark: 'Dark theme' }[t] || 'Theme follows system';
-      btn.title = label + ' (click to change)';
-      btn.setAttribute('aria-label', label);
-      btn.innerHTML = THEME_ICONS[t] || THEME_ICONS.auto;
+    root.dataset.season = season;
+    root.dataset.mode = night ? 'dark' : 'light';
+    scene.set({ season, night, motion: prefs.motion });
+    const info = SEASON_INFO[season];
+    const btn = qs('#season-btn');
+    btn.innerHTML = icon(info.icon) + `<span class="season-label">${info.label}</span>` + icon('chevron-down');
+    btn.setAttribute('aria-label', `Appearance: ${info.label}, ${night ? 'night' : 'day'}`);
+    if (popover) renderPopover();
+  }
+
+  function restartCycle() {
+    clearInterval(cycleTimer);
+    cycleTimer = null;
+    if (prefs.season !== 'cycle') return;
+    cycleSeason = cycleSeason || scene.seasonFor(new Date());
+    cycleTimer = setInterval(() => {
+      // Hold the season still while studying.
+      if (document.hidden || document.body.dataset.view === 'study') return;
+      const all = scene.SEASONS;
+      cycleSeason = all[(all.indexOf(cycleSeason) + 1) % all.length];
+      applyAppearance();
+    }, 12000);
+  }
+
+  function setPrefs(patch) {
+    Object.assign(prefs, patch);
+    local.set('fc-season', prefs.season);
+    local.set('fc-theme', prefs.theme);
+    local.set('fc-motion', prefs.motion);
+    if ('season' in patch && patch.season === 'cycle') cycleSeason = currentSeason();
+    restartCycle();
+    applyAppearance();
+  }
+
+  let popover = null;
+  function renderPopover() {
+    const pressed = (on) => `aria-pressed="${on ? 'true' : 'false'}"`;
+    popover.innerHTML = `
+      <h2>Season</h2>
+      <div>
+        <div class="season-grid">${scene.SEASONS.map(
+          (k) => `<button class="season-opt" data-s="${k}" ${pressed(prefs.season === k)}>${icon(SEASON_INFO[k].icon)}<span>${SEASON_INFO[k].label}<br><small>${SEASON_INFO[k].note}</small></span></button>`
+        ).join('')}</div>
+        <div class="season-auto">
+          <button data-s="auto" ${pressed(prefs.season === 'auto')}>${icon('calendar-days')} Match today</button>
+          <button data-s="cycle" ${pressed(prefs.season === 'cycle')}>${icon('repeat')} Cycle seasons</button>
+        </div>
+      </div>
+      <h2>Time of day</h2>
+      <div class="segmented" role="group" aria-label="Time of day">
+        <button data-t="light" ${pressed(prefs.theme === 'light')}>${icon('sun')} Day</button>
+        <button data-t="dark" ${pressed(prefs.theme === 'dark')}>${icon('moon')} Night</button>
+        <button data-t="auto" ${pressed(prefs.theme === 'auto')}>${icon('monitor')} System</button>
+      </div>
+      <label class="switch-row">Animated scenery<input type="checkbox" class="switch" id="motion-toggle" ${prefs.motion ? 'checked' : ''}></label>
+      ${reducedQuery.matches ? '<p class="muted small">Your device asks for reduced motion, so the scenery stays still.</p>' : ''}`;
+  }
+
+  function closePopover() {
+    if (!popover) return;
+    popover.remove();
+    popover = null;
+    qs('#season-btn').setAttribute('aria-expanded', 'false');
+  }
+
+  function openPopover() {
+    popover = document.createElement('div');
+    popover.className = 'popover glass';
+    popover.id = 'appearance';
+    popover.setAttribute('role', 'dialog');
+    popover.setAttribute('aria-label', 'Appearance');
+    document.body.appendChild(popover);
+    renderPopover();
+    qs('#season-btn').setAttribute('aria-expanded', 'true');
+    popover.addEventListener('click', (e) => {
+      // Clicks inside re-render the picker; don't let the "click outside" handler see a detached target.
+      e.stopPropagation();
+      const s = e.target.closest('[data-s]');
+      const t = e.target.closest('[data-t]');
+      if (s) setPrefs({ season: s.dataset.s });
+      if (t) setPrefs({ theme: t.dataset.t });
+    });
+    popover.addEventListener('change', (e) => {
+      if (e.target.id === 'motion-toggle') setPrefs({ motion: e.target.checked });
+    });
+    const first = popover.querySelector('[aria-pressed="true"]');
+    if (first) first.focus();
+  }
+
+  scene.init();
+  restartCycle();
+  applyAppearance();
+  // Enable the season cross-fade only after the first paint, so loading doesn't animate.
+  requestAnimationFrame(() => requestAnimationFrame(() => (document.documentElement.dataset.ready = '')));
+  darkQuery.addEventListener && darkQuery.addEventListener('change', applyAppearance);
+  qs('#season-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    popover ? closePopover() : openPopover();
+  });
+  document.addEventListener('click', (e) => {
+    if (popover && !popover.contains(e.target)) closePopover();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && popover) {
+      closePopover();
+      qs('#season-btn').focus();
+    }
+  });
+
+  // ------------------------------------------------------- colours & streaks
+  const DECK_COLORS = [
+    ['#f7567c', '#ff8a4c'], ['#7b61ff', '#c063d6'], ['#0b8fd8', '#14a38b'], ['#f08a0b', '#e5484d'],
+    ['#0f9f6e', '#0b8fd8'], ['#5b5bd6', '#0aa2c0'], ['#e0458f', '#8b5cf6'], ['#e2591a', '#c9832a'],
+    ['#0e8f86', '#5b9a1a'], ['#3b6ff0', '#8b5cf6'],
+  ];
+  const GLYPHS = ['∑', '∫', 'π', 'λ', 'Δ', '∞', '√', 'θ', 'Ω', 'μ', 'φ', '∂', 'α', 'β', 'σ', 'ψ'];
+
+  function hashStr(str) {
+    let n = 7;
+    for (const c of String(str)) n = (n * 31 + c.codePointAt(0)) | 0;
+    return Math.abs(n);
+  }
+
+  function deckLook(deck) {
+    const n = hashStr(deck.id);
+    const [c1, c2] = DECK_COLORS[n % DECK_COLORS.length];
+    return { style: `--c1:${c1};--c2:${c2}`, glyph: GLYPHS[Math.floor(n / DECK_COLORS.length) % GLYPHS.length] };
+  }
+
+  function learnedPct(s) {
+    return s.total ? Math.round((s.learned / s.total) * 100) : 0;
+  }
+
+  function recordActivity() {
+    const today = srs.dayKey(Date.now());
+    const days = local.get('fc-activity', []);
+    if (days[days.length - 1] !== today) {
+      days.push(today);
+      local.set('fc-activity', days.slice(-400));
     }
   }
-  applyTheme(local.get('fc-theme', 'auto'));
-  document.getElementById('theme-toggle').addEventListener('click', () => {
-    const order = ['auto', 'light', 'dark'];
-    const next = order[(order.indexOf(local.get('fc-theme', 'auto')) + 1) % order.length];
-    local.set('fc-theme', next);
-    applyTheme(next);
-  });
+
+  function streakDays() {
+    const days = new Set(local.get('fc-activity', []));
+    const d = new Date();
+    if (!days.has(srs.dayKey(d))) d.setDate(d.getDate() - 1);
+    let n = 0;
+    while (days.has(srs.dayKey(d))) {
+      n++;
+      d.setDate(d.getDate() - 1);
+    }
+    return n;
+  }
+
+  function greeting() {
+    const hr = new Date().getHours();
+    if (hr < 5) return 'Studying late?';
+    if (hr < 12) return 'Good morning';
+    if (hr < 18) return 'Good afternoon';
+    return 'Good evening';
+  }
+
+  function backLink(href, label) {
+    return `<a class="back" href="${href}">${icon('arrow-left')}<span>${h(label)}</span></a>`;
+  }
 
   // ----------------------------------------------------------------- router
   let viewToken = 0;
   let viewCleanup = null;
+  // Saves still in flight (study progress is written in the background). Views wait for
+  // these before reading, so leaving a session never shows or overwrites stale data.
+  let pendingWrites = Promise.resolve();
 
   const routes = [
     [/^\/?$/, 'home', viewHome],
@@ -289,6 +461,8 @@
     viewCleanup = null;
     closeModal();
     const token = ++viewToken;
+    await pendingWrites;
+    if (token !== viewToken) return;
     const path = location.hash.replace(/^#/, '').split('?')[0] || '/';
     let match = null;
     for (const [re, name, fn] of routes) {
@@ -312,7 +486,7 @@
     } catch (err) {
       console.error(err);
       if (token === viewToken) {
-        $app.innerHTML = `<section class="page"><h1>Something went wrong</h1><p class="muted">${h(err.message || err)}</p><p><a class="btn" href="#/">Back to decks</a></p></section>`;
+        $app.innerHTML = `<section class="page narrow"><div class="glass panel"><h1>Something went wrong</h1><p class="muted">${h(err.message || err)}</p><p><a class="btn btn-primary" href="#/">${icon('arrow-left')} Back to decks</a></p></div></section>`;
       }
     }
   }
@@ -322,7 +496,7 @@
   }
 
   function notFound() {
-    $app.innerHTML = `<section class="page"><h1>Deck not found</h1><p class="muted">It may have been deleted.</p><p><a class="btn" href="#/">Back to decks</a></p></section>`;
+    $app.innerHTML = `<section class="page narrow"><div class="glass panel"><h1>Deck not found</h1><p class="muted">It may have been deleted.</p><p><a class="btn btn-primary" href="#/">${icon('arrow-left')} Back to decks</a></p></div></section>`;
   }
 
   // ------------------------------------------------------------------- home
@@ -331,58 +505,107 @@
     const decks = (await db.getDecks()).sort((a, b) => (b.lastStudied || b.updatedAt || 0) - (a.lastStudied || a.updatedAt || 0));
     if (stale(token)) return;
     const now = Date.now();
+    const season = SEASON_INFO[currentSeason()];
+    const dateStr = new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
+    const eyebrow = `<p class="eyebrow">${icon(season.icon)} ${season.label} · ${h(dateStr)}</p>`;
 
-    const deckItems = decks
-      .map((d) => {
-        const s = srs.deckStats(d.cards, now);
-        const fresh = Math.min(s.new, newLimitFor(d, now));
-        const ready = s.due + fresh > 0;
+    const infos = decks.map((d) => {
+      const s = srs.deckStats(d.cards, now);
+      const fresh = Math.min(s.new, newLimitFor(d, now));
+      return { d, s, fresh, ready: s.due + fresh > 0 };
+    });
+    const totalDue = infos.reduce((n, i) => n + i.s.due, 0);
+    const totalNew = infos.reduce((n, i) => n + i.fresh, 0);
+    const totalLearned = infos.reduce((n, i) => n + i.s.learned, 0);
+    const readyDecks = infos.filter((i) => i.ready);
+    const next = readyDecks.slice().sort((a, b) => b.s.due - a.s.due || b.fresh - a.fresh)[0];
+    const streak = streakDays();
+    const shortName = (n) => (n.length > 26 ? n.slice(0, 25) + '…' : n);
+
+    const deckItems = infos
+      .map(({ d, s, fresh, ready }) => {
+        const look = deckLook(d);
+        const pct = learnedPct(s);
         return `<li class="deck-card">
-          <a class="deck-link" href="#/deck/${d.id}">
-            <h2>${h(d.name)}</h2>
-            <p class="muted">${plural(s.total, 'card')} · ${s.learned} learned${d.lastStudied ? ' · studied ' + timeAgo(d.lastStudied) : ''}</p>
+          <a class="deck-cover" href="#/deck/${d.id}" style="${look.style}" tabindex="-1" aria-hidden="true">
+            <span class="deck-glyph">${look.glyph}</span>
+            <span class="ring" style="--p:${pct}" title="${pct}% learned"><span>${pct}%</span></span>
           </a>
-          <div class="deck-card-foot">
-            <span class="chips">
-              ${s.due ? `<span class="chip chip-due">${s.due} due</span>` : ''}
-              ${fresh ? `<span class="chip chip-new">${fresh} new</span>` : ''}
-              ${!ready ? `<span class="chip chip-done">Done for now</span>` : ''}
-            </span>
-            <a class="btn btn-sm ${ready ? 'btn-primary' : ''}" href="#/${ready ? 'study' : 'practice'}/${d.id}">${ready ? 'Study' : 'Practice'}</a>
+          <div class="deck-body">
+            <a class="deck-link" href="#/deck/${d.id}"><h3>${h(d.name)}</h3></a>
+            <p class="muted">${plural(s.total, 'card')}${d.lastStudied ? ' · studied ' + timeAgo(d.lastStudied) : ''}</p>
+            <div class="deck-card-foot">
+              <span class="chips">
+                ${s.due ? `<span class="chip chip-due">${icon('flame')}${s.due} due</span>` : ''}
+                ${fresh ? `<span class="chip chip-new">${icon('sparkles')}${fresh} new</span>` : ''}
+                ${!ready ? `<span class="chip chip-done">${icon('check')}Done for now</span>` : ''}
+              </span>
+              <a class="btn btn-sm ${ready ? 'btn-primary' : ''}" href="#/${ready ? 'study' : 'practice'}/${d.id}">${icon(ready ? 'play' : 'shuffle')}${ready ? 'Study' : 'Practice'}</a>
+            </div>
           </div>
         </li>`;
       })
       .join('');
 
-    const empty = `<div class="empty">
-        <h2>Make your first deck</h2>
-        <ol class="steps">
-          <li><a href="#/prompt">Copy the prompt for Claude</a>.</li>
-          <li>Give it to Claude together with your lecture notes or slides (PDF).</li>
-          <li><a href="#/import">Paste Claude's output here</a>, and add the PDF if the cards use pictures from it.</li>
-        </ol>
-        <div class="row">
-          <a class="btn btn-primary" href="#/import">Import flashcards</a>
-          <button class="btn" id="sample-btn">Try a sample deck</button>
-        </div>
-      </div>`;
+    const hero = decks.length
+      ? `<div class="hero glass">
+          <div class="hero-text">
+            ${eyebrow}
+            <h1>${greeting()}</h1>
+            <p class="hero-sub">${
+              totalDue + totalNew
+                ? `You have <strong>${plural(totalDue + totalNew, 'card')}</strong> to study today${readyDecks.length > 1 ? ` across ${plural(readyDecks.length, 'deck')}` : ''}.`
+                : 'You’re all caught up. Practise a deck, or import new cards from Claude.'
+            }</p>
+            <div class="hero-stats">
+              <div class="hero-stat"><b>${totalDue}</b><span>due</span></div>
+              <div class="hero-stat"><b>${totalNew}</b><span>new today</span></div>
+              <div class="hero-stat"><b>${totalLearned}</b><span>learned</span></div>
+            </div>
+          </div>
+          <div class="hero-side">
+            ${streak ? `<span class="streak">${icon('flame')}<b>${streak}</b> day streak</span>` : ''}
+            ${
+              next
+                ? `<a class="btn btn-primary btn-lg" href="#/study/${next.d.id}">${icon('play')} Study ${h(shortName(next.d.name))}</a>`
+                : `<a class="btn btn-primary btn-lg" href="#/import">${icon('wand-sparkles')} Import cards</a>`
+            }
+          </div>
+        </div>`
+      : `<div class="hero glass hero-empty">
+          ${eyebrow}
+          <h1>Turn your lectures into flashcards</h1>
+          <p class="hero-sub">Claude writes the cards from your notes and slides, with LaTeX and pictures. You study them here with spaced repetition.</p>
+          <ol class="step-cards">
+            <li><span class="step-num">1</span><b>Copy the prompt</b><span>It tells Claude exactly how to write cards for this app.</span><button class="btn btn-sm copy-prompt">${icon('copy')} Copy prompt</button></li>
+            <li><span class="step-num">2</span><b>Ask Claude</b><span>Attach your lecture PDF or notes, paste the prompt and send.</span></li>
+            <li><span class="step-num">3</span><b>Paste &amp; study</b><span>Paste Claude's cards into Import, and add the PDF for slide pictures.</span><a class="btn btn-sm" href="#/import">${icon('clipboard-paste')} Import</a></li>
+          </ol>
+          <div class="row wrap">
+            <a class="btn btn-primary btn-lg" href="#/import">${icon('wand-sparkles')} Import flashcards</a>
+            <button class="btn btn-lg" id="sample-btn">${icon('sparkles')} Try a sample deck</button>
+          </div>
+        </div>`;
 
     $app.innerHTML = `<section class="page">
-      <div class="page-head">
-        <h1>Your decks</h1>
-        ${decks.length ? '<a class="btn btn-primary" href="#/import">+ New deck</a>' : ''}
-      </div>
-      ${decks.length ? `<ul class="deck-grid">${deckItems}</ul>` : empty}
-      <footer class="page-foot">
-        <div class="row">
-          ${decks.length ? '<button class="btn btn-sm" id="backup-btn">Download backup</button>' : ''}
-          <label class="btn btn-sm">Restore backup<input type="file" id="restore-input" accept=".json,application/json" hidden></label>
-          ${decks.length ? '<button class="btn btn-sm btn-ghost" id="sample-btn">Add sample deck</button>' : ''}
+      ${hero}
+      ${
+        decks.length
+          ? `<div class="section-head"><h2>Your decks</h2><a class="btn btn-sm" href="#/import">${icon('plus')} New deck</a></div>
+             <ul class="deck-grid">${deckItems}<li><a class="new-deck-card" href="#/import">${icon('plus')}<span>New deck from Claude</span></a></li></ul>`
+          : ''
+      }
+      <footer class="page-foot glass-soft">
+        <div class="row wrap">
+          ${decks.length ? `<button class="btn btn-sm" id="backup-btn">${icon('archive')} Download backup</button>` : ''}
+          <label class="btn btn-sm">${icon('archive-restore')} Restore backup<input type="file" id="restore-input" accept=".json,application/json" hidden></label>
+          ${decks.length ? `<button class="btn btn-sm btn-ghost" id="sample-btn">${icon('sparkles')} Add sample deck</button>` : ''}
         </div>
         <p class="muted small">Your decks are stored only in this browser. Download a backup to move them to another device.<span id="usage"></span></p>
       </footer>
     </section>`;
 
+    bindCopyPrompt($app);
     const sampleBtn = qs('#sample-btn');
     if (sampleBtn) sampleBtn.addEventListener('click', addSampleDeck);
     const backupBtn = qs('#backup-btn');
@@ -504,7 +727,7 @@
   // ----------------------------------------------------------------- prompt
   function promptStepsHTML() {
     return `<ol class="steps">
-      <li><button class="btn btn-sm btn-primary copy-prompt">Copy the prompt</button></li>
+      <li><button class="btn btn-sm btn-primary copy-prompt">${icon('copy')} Copy the prompt</button></li>
       <li>In Claude, attach your lecture slides (export PowerPoint/Keynote as <strong>PDF</strong>) or notes, paste the prompt, and send. You can add a line such as "about 40 cards" or "focus on the proofs".</li>
       <li>Copy Claude's output (the copy button on the code block), or download the .txt file it makes.</li>
       <li><a href="#/import">Import it</a>: paste the text or open the file. If the cards show slide pictures, add the <strong>same PDF</strong> on the import page so the app can use its pages.</li>
@@ -522,19 +745,24 @@
 
   function viewPrompt() {
     $app.innerHTML = `<section class="page narrow">
-      <h1>Make flashcards with Claude</h1>
-      ${promptStepsHTML()}
-      <div class="prompt-box">
-        <div class="prompt-box-head"><strong>Prompt</strong><button class="btn btn-sm copy-prompt">Copy</button></div>
+      <div class="page-head"><h1>Make flashcards with Claude</h1></div>
+      <div class="glass panel">
+        <p class="eyebrow">${icon('wand-sparkles')} How it works</p>
+        ${promptStepsHTML()}
+      </div>
+      <div class="prompt-box glass">
+        <div class="prompt-box-head"><strong>The prompt</strong><button class="btn btn-sm btn-primary copy-prompt">${icon('copy')} Copy</button></div>
         <pre id="prompt-text">${h(prompt.PROMPT)}</pre>
       </div>
-      <h2>Tips</h2>
-      <ul class="tips">
-        <li><strong>Long lectures:</strong> ask for cards one section at a time, then use <em>Add cards</em> on the deck page to add each batch to the same deck. Exact duplicates are skipped.</li>
-        <li><strong>Pictures:</strong> Claude can reference any page of a PDF you give it. Add the same PDF when importing, and each reference shows that page. You can also add your own image files and refer to them by file name.</li>
-        <li><strong>Fixing a card:</strong> while studying, press <kbd>E</kbd> to edit the current card.</li>
-        <li><strong>Other formats:</strong> the importer also reads CSV (<code>question,answer</code>; wrap text containing commas in "quotes"), tab-separated text, and JSON.</li>
-      </ul>
+      <div class="glass panel">
+        <h2>Tips</h2>
+        <ul class="tips">
+          <li><strong>Long lectures:</strong> ask for cards one section at a time, then use <em>Add cards</em> on the deck page to add each batch to the same deck. Exact duplicates are skipped.</li>
+          <li><strong>Pictures:</strong> Claude can reference any page of a PDF you give it. Add the same PDF when importing, and each reference shows that page. You can also add your own image files and refer to them by file name.</li>
+          <li><strong>Fixing a card:</strong> while studying, press <kbd>E</kbd> to edit the current card.</li>
+          <li><strong>Other formats:</strong> the importer also reads CSV (<code>question,answer</code>; wrap text containing commas in "quotes"), tab-separated text, and JSON.</li>
+        </ul>
+      </div>
     </section>`;
     bindCopyPrompt($app);
   }
@@ -558,19 +786,19 @@
     onCleanup(() => added.forEach((i) => URL.revokeObjectURL(i.url)));
 
     $app.innerHTML = `<section class="page import">
-      ${target ? `<a class="back" href="#/deck/${target.id}">← ${h(target.name)}</a>` : ''}
+      ${target ? backLink('#/deck/' + target.id, target.name) : ''}
       <div class="page-head"><h1>${target ? 'Add cards' : 'Import flashcards'}</h1></div>
-      <details class="howto" ${decks.length ? '' : 'open'}>
-        <summary>How to get flashcards from Claude</summary>
+      <details class="howto glass" ${decks.length ? '' : 'open'}>
+        <summary>${icon('wand-sparkles')} How to get flashcards from Claude ${icon('chevron-down')}</summary>
         ${promptStepsHTML()}
       </details>
       <div class="import-grid">
-        <div class="import-input">
+        <div class="import-input glass">
           <div class="field">
             <div class="label-row">
               <label for="src">Flashcard text</label>
               <span class="row gap-sm">
-                <label class="btn btn-sm">Open file…<input type="file" id="text-file" accept=".txt,.md,.csv,.tsv,.json,text/plain,text/csv,application/json" hidden></label>
+                <label class="btn btn-sm">${icon('folder-open')} Open file…<input type="file" id="text-file" accept=".txt,.md,.csv,.tsv,.json,text/plain,text/csv,application/json" hidden></label>
               </span>
             </div>
             <textarea id="src" spellcheck="false" placeholder="# Deck name&#10;&#10;Q: What is $e^{i\\pi}$?&#10;A: $-1$&#10;&#10;Q: Next question…&#10;A: Its answer…"></textarea>
@@ -597,6 +825,7 @@
           <div class="field">
             <span class="label">Images for this deck <span class="muted">(optional)</span></span>
             <div class="dropzone" id="drop" tabindex="0">
+              <span class="dropzone-icon">${icon('upload')}</span>
               <p>Drop the lecture <strong>PDF</strong> or image files here, or <label class="link">choose files<input type="file" id="img-files" accept="image/*,.pdf,application/pdf" multiple hidden></label></p>
               <p class="muted small">Cards refer to them as <code>![](slides.pdf#page=4)</code> or <code>![](diagram.png)</code>.${
                 existingImgs.length ? ` This deck already has ${plural(existingImgs.length, 'image')}.` : ''
@@ -606,11 +835,11 @@
           </div>
           <div class="row">
             <button class="btn btn-primary btn-lg" id="create" disabled>${target ? 'Add cards' : 'Create deck'}</button>
-            <button class="btn btn-ghost" id="clear">Clear</button>
+            <button class="btn btn-ghost" id="clear">${icon('rotate-ccw')} Clear</button>
           </div>
         </div>
-        <div class="import-preview" aria-live="polite">
-          <div class="preview-summary" id="summary"><p class="muted">Paste flashcards on the left to see a preview here.</p></div>
+        <div class="import-preview glass" aria-live="polite">
+          <div class="preview-summary" id="summary"><div class="empty-preview">${icon('eye')}<strong>Live preview</strong><span>Paste flashcards to see them rendered here, with LaTeX and images.</span></div></div>
           <ul class="warnings" id="warnings"></ul>
           <ol class="preview-list" id="preview"></ol>
         </div>
@@ -665,7 +894,7 @@
 
       const summary = qs('#summary');
       if (!ta.value.trim()) {
-        summary.innerHTML = '<p class="muted">Paste flashcards on the left to see a preview here.</p>';
+        summary.innerHTML = `<div class="empty-preview">${icon('eye')}<strong>Live preview</strong><span>Paste flashcards to see them rendered here, with LaTeX and images.</span></div>`;
       } else {
         const bits = [`<strong>${plural(toAdd.length, 'card')}</strong> ${target ? 'to add' : 'found'}`];
         if (dupes) bits.push(`${plural(dupes, 'duplicate')} skipped`);
@@ -711,10 +940,10 @@
         groups.get(k).count++;
       }
       const rows = [...groups.values()].map(
-        (g) => `<li><span>${g.pdf ? '📄' : '🖼'} ${h(g.name)}${g.pdf ? ` <span class="muted">(${plural(g.count, 'page')})</span>` : ''}</span>
-          <button class="icon-btn" data-remove="${h(g.name)}" aria-label="Remove ${h(g.name)}" title="Remove">✕</button></li>`
+        (g) => `<li><span>${icon(g.pdf ? 'file-text' : 'image')} ${h(g.name)}${g.pdf ? ` <span class="muted">(${plural(g.count, 'page')})</span>` : ''}</span>
+          <button class="icon-btn" data-remove="${h(g.name)}" aria-label="Remove ${h(g.name)}" title="Remove">${icon('x')}</button></li>`
       );
-      for (const [name, text] of processing) rows.push(`<li><span>📄 ${h(name)} <span class="muted">${h(text)}</span></span><span class="spinner" aria-hidden="true"></span></li>`);
+      for (const [name, text] of processing) rows.push(`<li><span>${icon('file-text')} ${h(name)} <span class="muted">${h(text)}</span></span><span class="spinner" aria-hidden="true"></span></li>`);
       qs('#file-list').innerHTML = rows.join('');
     }
 
@@ -882,52 +1111,65 @@
     const missing = missingRefs(deck.cards, resolve);
     const ready = s.due + fresh > 0;
     const studyLabel = ready
-      ? `Study now <small>${[s.due ? plural(s.due, 'review') : '', fresh ? fresh + ' new' : ''].filter(Boolean).join(' · ')}</small>`
-      : `All caught up <small>${s.nextDue ? 'next review ' + srs.formatDue(s.nextDue, now).replace('due ', '') : s.new ? "today's new cards are done" : 'nothing scheduled'}</small>`;
+      ? `<span class="btn-title">${icon('play')} Study now</span><small>${[s.due ? plural(s.due, 'review') : '', fresh ? fresh + ' new' : ''].filter(Boolean).join(' · ')}</small>`
+      : `<span class="btn-title">${icon('check')} All caught up</span><small>${s.nextDue ? 'next review ' + srs.formatDue(s.nextDue, now).replace('due ', '') : s.new ? "today's new cards are done" : 'nothing scheduled'}</small>`;
+
+    const look = deckLook(deck);
+    const pct = learnedPct(s);
+    const tile = (tag, attrs, ic, tone, title, sub) =>
+      `<${tag} class="tile" ${attrs} style="--tone:${tone}"><span class="stat-icon">${icon(ic)}</span><b>${title}</b><span>${sub}</span></${tag}>`;
 
     $app.innerHTML = `<section class="page">
-      <a class="back" href="#/">← Decks</a>
-      <div class="page-head deck-head">
-        <h1 id="deck-title">${h(deck.name)}</h1>
-        <button class="btn btn-sm btn-ghost" id="rename">Rename</button>
+      ${backLink('#/', 'Decks')}
+      <div class="deck-hero" style="${look.style}">
+        <span class="glyph-bg" aria-hidden="true">${look.glyph}</span>
+        <div>
+          <p class="eyebrow">${icon('layers')} Deck</p>
+          <h1 id="deck-title">${h(deck.name)}</h1>
+          <p>${plural(s.total, 'card')}${deck.lastStudied ? ' · studied ' + timeAgo(deck.lastStudied) : ''}</p>
+        </div>
+        <div class="hero-tools">
+          <span class="ring ring-lg" style="--p:${pct}"><span><b>${pct}%</b><small>learned</small></span></span>
+          <button class="icon-btn on-cover" id="rename" title="Rename deck" aria-label="Rename deck">${icon('pencil')}</button>
+        </div>
       </div>
       <div class="stats">
-        <div class="stat"><b>${s.due}</b><span>due</span></div>
-        <div class="stat"><b>${s.new}</b><span>new</span></div>
-        <div class="stat"><b>${s.learned}</b><span>learned</span></div>
-        <div class="stat"><b>${s.total}</b><span>total</span></div>
+        <div class="stat glass-soft" style="--tone:var(--due)"><span class="stat-icon">${icon('flame')}</span><div><b>${s.due}</b><span>due</span></div></div>
+        <div class="stat glass-soft" style="--tone:var(--new)"><span class="stat-icon">${icon('sparkles')}</span><div><b>${s.new}</b><span>new</span></div></div>
+        <div class="stat glass-soft" style="--tone:var(--good)"><span class="stat-icon">${icon('brain')}</span><div><b>${s.learned}</b><span>learned</span></div></div>
+        <div class="stat glass-soft" style="--tone:var(--accent-text)"><span class="stat-icon">${icon('layers')}</span><div><b>${s.total}</b><span>total</span></div></div>
       </div>
       <div class="actions-main">
         <a class="btn btn-primary btn-xl ${ready ? '' : 'disabled'}" ${ready ? `href="#/study/${deck.id}"` : 'aria-disabled="true"'} id="study-btn">${studyLabel}</a>
-        <a class="btn btn-xl" href="#/practice/${deck.id}" ${s.total ? '' : 'aria-disabled="true"'}>Practice all cards <small>shuffled · doesn't change your schedule</small></a>
+        <a class="btn btn-xl" href="#/practice/${deck.id}" ${s.total ? '' : 'aria-disabled="true"'}><span class="btn-title">${icon('shuffle')} Practice all</span><small>shuffled · doesn't change your schedule</small></a>
       </div>
       ${
         !ready && s.new
-          ? `<p class="center"><button class="btn btn-sm btn-ghost" id="more-new">Study ${Math.min(s.new, deck.newPerDay || DEFAULT_NEW_PER_DAY)} more new cards today</button></p>`
+          ? `<p class="center"><button class="btn btn-sm" id="more-new">${icon('sparkles')} Study ${Math.min(s.new, deck.newPerDay || DEFAULT_NEW_PER_DAY)} more new cards today</button></p>`
           : ''
       }
       ${
         missing.size
-          ? `<div class="banner banner-warn"><strong>${plural(missing.size, 'image')} used in cards ${missing.size === 1 ? "hasn't" : "haven't"} been added:</strong>
+          ? `<div class="banner banner-warn">${icon('image')}<strong>${plural(missing.size, 'image')} used in cards ${missing.size === 1 ? "hasn't" : "haven't"} been added:</strong>
               ${[...missing.keys()].slice(0, 6).map((r) => `<code>${h(r)}</code>`).join(', ')}${missing.size > 6 ? '…' : ''}
-              <a class="btn btn-sm" href="#/deck/${deck.id}/images">Add images</a></div>`
+              <a class="btn btn-sm" href="#/deck/${deck.id}/images">${icon('upload')} Add images</a></div>`
           : ''
       }
       <div class="actions-grid">
-        <a class="tile" href="#/deck/${deck.id}/cards"><b>Browse &amp; edit</b><span>${plural(s.total, 'card')}</span></a>
-        <a class="tile" href="#/import/${deck.id}"><b>Add cards</b><span>paste more from Claude</span></a>
-        <a class="tile" href="#/deck/${deck.id}/images"><b>Images</b><span>${plural(imgs.length, 'image')}</span></a>
-        <button class="tile" id="copy-text"><b>Copy as text</b><span>Q:/A: format</span></button>
-        <button class="tile" id="download-txt"><b>Download .txt</b><span>cards only</span></button>
-        <button class="tile" id="backup"><b>Download backup</b><span>cards, images &amp; progress</span></button>
+        ${tile('a', `href="#/deck/${deck.id}/cards"`, 'book-open', 'var(--accent-text)', 'Browse &amp; edit', plural(s.total, 'card'))}
+        ${tile('a', `href="#/import/${deck.id}"`, 'plus', 'var(--good)', 'Add cards', 'paste more from Claude')}
+        ${tile('a', `href="#/deck/${deck.id}/images"`, 'images', 'var(--easy)', 'Images', plural(imgs.length, 'image'))}
+        ${tile('button', 'id="copy-text"', 'copy', 'var(--hard)', 'Copy as text', 'Q:/A: format')}
+        ${tile('button', 'id="download-txt"', 'file-text', '#8b5cf6', 'Download .txt', 'cards only')}
+        ${tile('button', 'id="backup"', 'archive', 'var(--again)', 'Download backup', 'cards, images &amp; progress')}
       </div>
-      <details class="settings">
-        <summary>Deck settings</summary>
+      <details class="settings glass-soft">
+        <summary>${icon('settings-2')} Deck settings</summary>
         <div class="settings-body">
           <label class="inline-field">New cards per day <input type="number" id="new-per-day" min="0" max="9999" value="${Number.isFinite(deck.newPerDay) ? deck.newPerDay : DEFAULT_NEW_PER_DAY}"></label>
           <div class="row wrap">
-            <button class="btn btn-sm" id="reset">Reset progress</button>
-            <button class="btn btn-sm btn-danger" id="delete">Delete deck</button>
+            <button class="btn btn-sm" id="reset">${icon('rotate-ccw')} Reset progress</button>
+            <button class="btn btn-sm btn-danger" id="delete">${icon('trash-2')} Delete deck</button>
           </div>
         </div>
       </details>
@@ -986,7 +1228,7 @@
   function openCardEditor(deck, card, onDone) {
     const isNew = !card;
     const m = openModal(
-      `<h2>${isNew ? 'New card' : 'Edit card'}</h2>
+      `<h2>${icon(isNew ? 'plus' : 'pencil')} ${isNew ? 'New card' : 'Edit card'}</h2>
       <div class="editor-grid">
         <div class="field"><label for="ed-front">Question</label><textarea id="ed-front" spellcheck="true"></textarea></div>
         <div class="md preview" id="pv-front" aria-label="Question preview"></div>
@@ -995,10 +1237,10 @@
       </div>
       <p class="muted small">Markdown and LaTeX (<code>$…$</code>, <code>$$…$$</code>) work. Paste an image (Ctrl/⌘+V) into a field to add it to the deck.</p>
       <div class="modal-actions">
-        ${isNew ? '' : '<button class="btn btn-danger" id="ed-delete">Delete</button>'}
+        ${isNew ? '' : `<button class="btn btn-danger" id="ed-delete">${icon('trash-2')} Delete</button>`}
         <span class="spacer"></span>
         <button class="btn" id="ed-cancel">Cancel</button>
-        <button class="btn btn-primary" id="ed-save">Save <kbd>Ctrl</kbd>+<kbd>Enter</kbd></button>
+        <button class="btn btn-primary" id="ed-save">${icon('check')} Save <kbd>Ctrl</kbd>+<kbd>Enter</kbd></button>
       </div>`,
       { wide: true, sticky: true }
     );
@@ -1103,13 +1345,13 @@
     let shown = PAGE_SIZE;
 
     $app.innerHTML = `<section class="page">
-      <a class="back" href="#/deck/${deck.id}">← ${h(deck.name)}</a>
+      ${backLink('#/deck/' + deck.id, deck.name)}
       <div class="page-head">
         <h1>Cards</h1>
-        <button class="btn btn-primary" id="add-card">+ Add card</button>
+        <button class="btn btn-primary" id="add-card">${icon('plus')} Add card</button>
       </div>
-      <div class="row wrap">
-        <input type="search" id="search" placeholder="Search cards…" class="grow" aria-label="Search cards">
+      <div class="toolbar glass">
+        <label class="search-field grow">${icon('search')}<input type="search" id="search" placeholder="Search cards…" aria-label="Search cards"></label>
         <select id="filter" aria-label="Filter cards">
           <option value="all">All cards</option>
           <option value="due">Due now</option>
@@ -1118,7 +1360,7 @@
           <option value="hard">Often forgotten</option>
         </select>
       </div>
-      <p class="muted small" id="count"></p>
+      <p class="small count-line" id="count"></p>
       <ol class="card-list" id="list"></ol>
       <p class="center"><button class="btn" id="more" hidden>Show more</button></p>
     </section>`;
@@ -1148,7 +1390,7 @@
           (c) => `<li class="card-row" data-id="${c.id}">
             <div class="cr-side md">${render.renderHTML(c.front, resolve)}</div>
             <div class="cr-side cr-back md">${render.renderHTML(c.back, resolve)}</div>
-            <div class="cr-meta">${status(c)}<button class="btn btn-sm btn-ghost" data-edit="${c.id}">Edit</button></div>
+            <div class="cr-meta">${status(c)}<button class="btn btn-sm btn-ghost" data-edit="${c.id}">${icon('pencil')} Edit</button></div>
           </li>`
         )
         .join('');
@@ -1181,12 +1423,15 @@
     if (stale(token)) return;
 
     $app.innerHTML = `<section class="page">
-      <a class="back" href="#/deck/${deck.id}">← ${h(deck.name)}</a>
+      ${backLink('#/deck/' + deck.id, deck.name)}
       <div class="page-head"><h1>Images</h1></div>
+      <div class="glass panel">
       <div class="dropzone" id="drop" tabindex="0">
+        <span class="dropzone-icon">${icon('upload')}</span>
         <p>Drop a lecture <strong>PDF</strong> or image files here, or <label class="link">choose files<input type="file" id="img-files" accept="image/*,.pdf,application/pdf" multiple hidden></label></p>
         <p class="muted small">Every page of a PDF becomes an image named like <code>slides.pdf#page=4</code>. Adding a file with the same name replaces the old one.</p>
         <p class="small" id="progress"></p>
+      </div>
       </div>
       <div id="missing"></div>
       <div id="groups"></div>
@@ -1205,7 +1450,7 @@
         }
       }
       qs('#missing').innerHTML = missing.size
-        ? `<div class="banner banner-warn"><strong>Used in cards but not added yet:</strong>
+        ? `<div class="banner banner-warn">${icon('image')}<strong>Used in cards but not added yet:</strong>
             <ul class="missing-list">${[...missing].map(([ref, n]) => `<li><code>${h(ref)}</code> <span class="muted">(${plural(n, 'card')})</span></li>`).join('')}</ul></div>`
         : '';
 
@@ -1219,10 +1464,10 @@
         .sort(([a], [b]) => (a === '' ? 1 : b === '' ? -1 : a.localeCompare(b)))
         .map(([pdf, imgs]) => {
           imgs.sort((a, b) => (a.page || 0) - (b.page || 0) || a.name.localeCompare(b.name));
-          return `<section class="img-group">
+          return `<section class="img-group glass">
             <div class="img-group-head">
-              <h2>${pdf ? '📄 ' + h(pdf) : 'Image files'} <span class="muted">(${imgs.length})</span></h2>
-              ${pdf ? `<button class="btn btn-sm btn-danger" data-del-pdf="${h(pdf)}">Delete all pages</button>` : ''}
+              <h2>${icon(pdf ? 'file-text' : 'images')} ${pdf ? h(pdf) : 'Image files'} <span class="muted">(${imgs.length})</span></h2>
+              ${pdf ? `<button class="btn btn-sm btn-danger" data-del-pdf="${h(pdf)}">${icon('trash-2')} Delete all pages</button>` : ''}
             </div>
             <ul class="img-grid">${imgs
               .map(
@@ -1231,8 +1476,8 @@
                   <div class="img-tile-name" title="${h(i.name)}">${h(i.page ? 'Page ' + i.page : i.name)}</div>
                   <div class="img-tile-meta">${uses.get(i.id) ? `<span class="chip chip-new">${plural(uses.get(i.id), 'card')}</span>` : '<span class="muted small">unused</span>'}
                     <span class="row gap-sm">
-                      <button class="icon-btn" data-copy="${h(i.name)}" title="Copy reference" aria-label="Copy reference to ${h(i.name)}">⧉</button>
-                      <button class="icon-btn" data-del="${h(i.id)}" title="Delete" aria-label="Delete ${h(i.name)}">✕</button>
+                      <button class="icon-btn" data-copy="${h(i.name)}" title="Copy reference" aria-label="Copy reference to ${h(i.name)}">${icon('copy')}</button>
+                      <button class="icon-btn" data-del="${h(i.id)}" title="Delete" aria-label="Delete ${h(i.name)}">${icon('trash-2')}</button>
                     </span>
                   </div>
                 </li>`
@@ -1240,7 +1485,7 @@
               .join('')}</ul>
           </section>`;
         });
-      qs('#groups').innerHTML = sections.length ? sections.join('') : '<p class="muted center">No images yet.</p>';
+      qs('#groups').innerHTML = sections.length ? sections.join('') : `<div class="glass panel empty-preview">${icon('images')}<strong>No images yet</strong><span>Add the lecture PDF so cards can show its pages.</span></div>`;
     }
 
     async function addFiles(files) {
@@ -1308,17 +1553,19 @@
     const started = Date.now();
 
     $app.innerHTML = `<section class="study">
-      <div class="study-top">
-        <a class="icon-btn" href="#/deck/${deck.id}" aria-label="End session" title="End session (Esc)">✕</a>
-        <div class="study-title" title="${h(deck.name)}">${h(deck.name)}${practice ? ' <span class="chip">practice</span>' : ''}</div>
+      <div class="study-top glass">
+        <a class="icon-btn" href="#/deck/${deck.id}" aria-label="End session" title="End session (Esc)">${icon('x')}</a>
+        <div class="study-title" title="${h(deck.name)}"><span>${h(deck.name)}</span>${practice ? ` <span class="chip chip-accent">${icon('shuffle')}practice</span>` : ''}</div>
         <div class="study-count" id="count"></div>
-        <button class="icon-btn" id="edit" title="Edit card (E)" aria-label="Edit card">✎</button>
+        <button class="icon-btn" id="edit" title="Edit card (E)" aria-label="Edit card">${icon('pencil')}</button>
       </div>
       <div class="progress" aria-hidden="true"><div class="progress-bar" id="bar"></div></div>
       <div class="card-stage" id="stage">
         <article class="flashcard" id="card" tabindex="-1" aria-live="polite">
-          <div class="face face-front md" id="front"></div>
-          <div class="face face-back md" id="back" hidden></div>
+          <div class="card-inner">
+            <div class="face face-front md" id="front"></div>
+            <div class="face face-back md" id="back" hidden></div>
+          </div>
         </article>
       </div>
       <div class="study-controls" id="controls"></div>
@@ -1336,7 +1583,7 @@
     }
 
     function counts() {
-      if (practice) return `<span title="Cards done">${done.size} / ${total}</span>`;
+      if (practice) return `<span class="c-done" title="Cards done">${done.size} / ${total}</span>`;
       let n = 0;
       let l = 0;
       let r = 0;
@@ -1360,10 +1607,14 @@
       $front.innerHTML = render.renderHTML(c.front, resolve);
       $back.innerHTML = render.renderHTML(c.back, resolve);
       $back.hidden = true;
-      $card.classList.remove('flipped');
-      $controls.innerHTML = `<button class="btn btn-primary btn-xl" id="flip">Show answer <kbd>Space</kbd></button>`;
+      $card.classList.remove('flipped', 'card-in');
+      void $card.offsetWidth; // restart the entrance animation
+      $card.classList.add('card-in');
+      $controls.innerHTML = `<button class="btn btn-primary btn-xl" id="flip"><span class="btn-title">${icon('eye')} Show answer <kbd>Space</kbd></span></button>`;
       qs('#flip').addEventListener('click', flip);
-      qs('#foot').innerHTML = history.length ? `<button class="btn btn-sm btn-ghost" id="undo">Undo <kbd>U</kbd></button>` : '';
+      qs('#foot').innerHTML =
+        (history.length ? `<button class="btn btn-sm btn-ghost" id="undo">${icon('undo-2')} Undo <kbd>U</kbd></button>` : '') +
+        `<span class="shortcut-hint">${icon('keyboard')} Space flip · 1–4 rate · E edit</span>`;
       const undoBtn = qs('#undo');
       if (undoBtn) undoBtn.addEventListener('click', undo);
       $card.focus({ preventScroll: true });
@@ -1401,6 +1652,7 @@
       if (history.length > 50) history.shift();
       tally[r]++;
       queue.shift();
+      recordActivity();
       if (practice) {
         if (r === 1) queue.splice(Math.min(queue.length, 4), 0, c.id);
         else done.add(c.id);
@@ -1423,6 +1675,7 @@
     function persist() {
       // Save the latest state; chain so writes stay in order.
       saving = saving.then(() => db.putDeck(deck)).catch((e) => toast('Could not save progress: ' + e.message, 'error'));
+      pendingWrites = saving;
     }
 
     function undo() {
@@ -1447,21 +1700,27 @@
       const moreNew = !practice && s.new > 0;
       $count.innerHTML = '';
       $card.classList.add('flipped');
+      const tallyChip = (n, label, tone) => `<span style="--tone:${tone}">${label} ${n}</span>`;
       $front.innerHTML = total
-        ? `<div class="done"><div class="done-mark" aria-hidden="true">✓</div><h2>${practice ? 'Practice complete' : 'Session complete'}</h2>
+        ? `<div class="done"><div class="done-mark" aria-hidden="true">${icon('party-popper')}</div><h2>${practice ? 'Practice complete' : 'Session complete'}</h2>
             <p>${plural(total, 'card')} in about ${plural(mins, 'minute')}${reviewed !== total ? ` (${reviewed} answers)` : ''}.</p>
-            ${
+            <div class="done-tally">${
               practice
-                ? `<p class="muted">Again: ${tally[1]} · Got it: ${tally[3]}</p>`
-                : `<p class="muted">Again ${tally[1]} · Hard ${tally[2]} · Good ${tally[3]} · Easy ${tally[4]}</p>
-                   <p class="muted">${s.nextDue ? 'Next review ' + srs.formatDue(s.nextDue).replace('due ', '') + '.' : ''}</p>`
-            }</div>`
-        : `<div class="done"><h2>Nothing to study right now</h2><p class="muted">${s.nextDue ? 'Next review ' + srs.formatDue(s.nextDue).replace('due ', '') + '.' : ''}</p></div>`;
+                ? tallyChip(tally[1], 'Again', 'var(--again)') + tallyChip(tally[3], 'Got it', 'var(--good)')
+                : tallyChip(tally[1], 'Again', 'var(--again)') + tallyChip(tally[2], 'Hard', 'var(--hard)') + tallyChip(tally[3], 'Good', 'var(--good)') + tallyChip(tally[4], 'Easy', 'var(--easy)')
+            }</div>
+            ${!practice && s.nextDue ? `<p class="muted">Next review ${srs.formatDue(s.nextDue).replace('due ', '')}.</p>` : ''}
+            ${streakDays() > 1 ? `<p class="streak center">${icon('flame')}<b>${streakDays()}</b> day streak</p>` : ''}</div>`
+        : `<div class="done"><div class="done-mark" aria-hidden="true">${icon('check')}</div><h2>Nothing to study right now</h2><p class="muted">${s.nextDue ? 'Next review ' + srs.formatDue(s.nextDue).replace('due ', '') + '.' : ''}</p></div>`;
+      if (total) {
+        const rect = $card.getBoundingClientRect();
+        scene.celebrate(rect.left + rect.width / 2, rect.top + rect.height * 0.3);
+      }
       $back.hidden = true;
       $controls.innerHTML = `<div class="row wrap center">
-        <a class="btn btn-primary" href="#/deck/${deck.id}">Back to deck</a>
-        ${moreNew ? `<button class="btn" id="more-new">Study more new cards</button>` : ''}
-        <a class="btn" href="#/practice/${deck.id}" id="practice-link">${practice ? 'Practice again' : 'Practice all cards'}</a>
+        <a class="btn btn-primary btn-lg" href="#/deck/${deck.id}">${icon('arrow-left')} Back to deck</a>
+        ${moreNew ? `<button class="btn btn-lg" id="more-new">${icon('sparkles')} More new cards</button>` : ''}
+        <a class="btn btn-lg" href="#/practice/${deck.id}" id="practice-link">${icon('shuffle')} ${practice ? 'Practice again' : 'Practice all'}</a>
       </div>`;
       qs('#foot').innerHTML = '';
       const more = qs('#more-new');
