@@ -43,6 +43,9 @@ button{font:inherit;color:inherit}
 /* header */
 .top{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px 24px}
 .top .brand{flex:1 1 220px;min-width:0}
+.weeknav{display:inline-flex;margin-top:8px;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:var(--surface)}
+.wk{border:0;background:transparent;padding:5px 12px;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer}
+.wk[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
 .stats{display:flex;flex-wrap:wrap;gap:8px}
 .stat{display:flex;flex-direction:column;padding:6px 12px;border-radius:10px;background:var(--surface);border:1px solid var(--line);min-width:96px}
 .stat b{font-family:var(--f-mono);font-size:17px;font-weight:600;font-variant-numeric:tabular-nums}
@@ -205,6 +208,10 @@ dialog::backdrop{background:rgba(8,10,14,.45)}
     <div class="brand">
       <p class="eyebrow" id="weekLabel">This week</p>
       <h1>Sunday Planner</h1>
+      <div class="weeknav" role="group" aria-label="Choose week">
+        <button type="button" class="wk" data-off="0">This week</button>
+        <button type="button" class="wk" data-off="7">Next week</button>
+      </div>
     </div>
     <div class="stats" id="stats"></div>
     <button class="btn primary" id="addBtn" type="button">+ Add task</button>
@@ -436,7 +443,7 @@ function computePlan(now){
   for (const k of ["bufferDays","bufferDaysP5","minBlock","maxBlock","gap"]) cfg[k] = +cfg[k];
   const ws = startOfWeek(now);
   const tasks = S.tasks.map(t => ({...t, hours:Math.max(0, +t.hours || 0), priority:clampP(t.priority), log:Array.isArray(t.log) ? t.log : []}));
-  let lastDay = 7;
+  let lastDay = 14;
   for (const t of tasks){ const due = parseLocal(t.due); if (due && !t.done) lastDay = Math.max(lastDay, dayIndex(ws, due) + 1); }
   const nDays = Math.min(35, lastDay);
   const nowP = Math.max(0, dayIndex(ws, now) * SPD + Math.ceil((now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60) / SLOT));
@@ -459,7 +466,7 @@ function computePlan(now){
 }
 
 /* ---------- state ---------- */
-const S = {db:null, tasks:[], blocks:[], cfg:null, got:{tasks:false, blocks:false, cfg:false}, fresh:false,
+const S = {off:(() => { const n = new Date(); return n.getDay() === 6 && n.getHours() >= 12 ? 7 : 0; })(), db:null, tasks:[], blocks:[], cfg:null, got:{tasks:false, blocks:false, cfg:false}, fresh:false,
   timedOut:false, noDb:false, err:null, plan:null, sel:null, editing:null, writeErr:null};
 const $ = id => document.getElementById(id);
 function replan(){ S.plan = computePlan(new Date()); render(); }
@@ -469,15 +476,16 @@ function taskById(id){ return S.plan?.tasks.find(t => t.id === id); }
 
 function render(){
   const P = S.plan, now = new Date();
-  const ws = P ? P.ws : startOfWeek(now);
-  const we = dayDate(ws, 6);
+  const base = P ? P.ws : startOfWeek(now);
+  const ws = dayDate(base, S.off), we = dayDate(ws, 6);
+  document.querySelectorAll(".wk").forEach(b => b.setAttribute("aria-pressed", String(+b.dataset.off === S.off)));
   $("weekLabel").textContent = ws.getMonth() === we.getMonth()
     ? `Week of ${dFmt(ws, {month:"short", day:"numeric"})} – ${we.getDate()}`
     : `Week of ${dFmt(ws, {month:"short", day:"numeric"})} – ${dFmt(we, {month:"short", day:"numeric"})}`;
   renderNotices(P, now);
-  if (!P || !S.got.tasks){ $("stats").innerHTML = ""; renderDays(null, ws, now); return; }
+  if (!P || !S.got.tasks){ $("stats").innerHTML = ""; renderDays(null, base, now); return; }
   renderStats(P, now);
-  renderDays(P, ws, now);
+  renderDays(P, base, now);
   renderDay(P, now);
   renderDeadlines(P, now);
 }
@@ -506,14 +514,14 @@ function renderNotices(P, now){
 
 function renderStats(P, now){
   let planned = 0, done = 0;
-  for (const s of P.sessions) if (s.day < 7){ if (s.done) done += s.len * SLOT; else planned += s.len * SLOT; }
-  const ws = P.ws, we = dayDate(ws, 7);
-  const dueWeek = P.tasks.filter(t => { const d = parseLocal(t.due); return d && !t.done && d >= now && d < we; }).length;
+  for (const s of P.sessions) if (s.day >= S.off && s.day < S.off + 7){ if (s.done) done += s.len * SLOT; else planned += s.len * SLOT; }
+  const ws = dayDate(P.ws, S.off), we = dayDate(ws, 7);
+  const dueWeek = P.tasks.filter(t => { const d = parseLocal(t.due); return d && !t.done && d >= now && d >= ws && d < we; }).length;
   const attention = P.tasks.filter(t => { if (t.done) return false; const r = P.res[t.id], d = parseLocal(t.due); return (r && (r.short > 0 || r.late)) || (d && d < now); }).length;
   $("stats").innerHTML = `
-    <div class="stat"><b>${dur(planned)}</b><span>work left this week</span></div>
+    <div class="stat"><b>${dur(planned)}</b><span>work left ${S.off ? "next" : "this"} week</span></div>
     <div class="stat"><b>${dur(done)}</b><span>done</span></div>
-    <div class="stat"><b>${dueWeek}</b><span>due this week</span></div>
+    <div class="stat"><b>${dueWeek}</b><span>due ${S.off ? "next" : "this"} week</span></div>
     <div class="stat ${attention ? "alert" : ""}"><b>${attention}</b><span>need attention</span></div>`;
 }
 
@@ -535,11 +543,11 @@ function dayItems(P, d){
 
 function renderDays(P, ws, now){
   const today = dayIndex(ws, now);
-  if (S.sel == null) S.sel = Math.min(6, Math.max(0, today));
-  let maxMin = 240; const mins = [];
-  for (let d = 0; d < 7; d++){ let m = 0; if (P) for (const s of P.sessions) if (s.day === d) m += s.len * SLOT; mins.push(m); maxMin = Math.max(maxMin, m); }
+  if (S.sel == null || S.sel < S.off || S.sel >= S.off + 7) S.sel = today >= S.off && today < S.off + 7 ? today : S.off;
+  let maxMin = 240; const mins = {};
+  for (let d = S.off; d < S.off + 7; d++){ let m = 0; if (P) for (const s of P.sessions) if (s.day === d) m += s.len * SLOT; mins[d] = m; maxMin = Math.max(maxMin, m); }
   let html = "";
-  for (let d = 0; d < 7; d++){
+  for (let d = S.off; d < S.off + 7; d++){
     const date = dayDate(ws, d);
     let dots = "";
     if (P){
@@ -593,7 +601,7 @@ function renderDay(P, now){
       const st = slotDate(P.ws, d, it.s), en = slotDate(P.ws, d, it.e);
       if (it.type === "fixed"){
         const b = it.b, hard = isHard(b);
-        const kind = b.kind === "class" ? "Class" : b.kind === "lab" ? "Lab" : b.kind === "work" ? "Work shift" : "Busy";
+        const kind = ({class:"Class", lab:"Lab", work:"Work shift", study:"Study block", personal:"Personal"})[b.kind] || "Busy";
         html += `<li class="row fixed ${hard ? "locked" : ""}">
           <div class="time">${esc(tFmt(st))}<small>${esc(tFmt(en))}</small></div>
           <span class="badge">${svg(hard ? "lock" : "cap")}</span>
@@ -630,7 +638,7 @@ function renderDay(P, now){
 }
 
 function renderDeadlines(P, now){
-  const ws = P.ws, weekMs = 7 * 864e5;
+  const ws = dayDate(P.ws, S.off), weekMs = 7 * 864e5;
   const tasks = [...P.tasks].filter(t => parseLocal(t.due)).sort((a, b) => parseLocal(a.due) - parseLocal(b.due) || b.priority - a.priority);
   const open = tasks.filter(t => !t.done), done = tasks.filter(t => t.done);
   $("dlSub").textContent = open.length ? `${open.length} open` : "";
@@ -652,7 +660,7 @@ function renderDeadlines(P, now){
     ${nowX >= 0 && nowX <= 100 ? `<div class="now" style="left:${nowX.toFixed(2)}%"></div>` : ""}
     ${pins.map(p => `<button type="button" tabindex="-1" class="pin p${p.t.priority} ${p.t.done ? "done" : ""}" data-edit="${esc(p.t.id)}" title="${esc(p.t.title)}" style="left:${Math.min(97, Math.max(3, p.x)).toFixed(2)}%;top:${24 + p.lane * 28}px">${svg(p.t.priority)}</button>`).join("")}
   </div></div>`;
-  if (later > 0) html += `<p class="sub" style="margin:-6px 0 12px;font-size:12.5px;color:var(--muted)">+ ${later} due after Saturday (listed below)</p>`;
+  if (later > 0) html += `<p class="sub" style="margin:-6px 0 12px;font-size:12.5px;color:var(--muted)">+ ${later} due outside this week (listed below)</p>`;
 
   if (!tasks.length) html += `<div class="empty">No deadlines yet. Send Claude what's due this week and it will appear here.</div>`;
   const row = t => {
@@ -666,7 +674,7 @@ function renderDeadlines(P, now){
     else if (r.short > 0) status = `<span class="s bad">${svg("warn")}Won't fit · ${dur(r.short)} short</span>`;
     else if (doneM >= total - 1) status = `<span class="s ok">${svg("check")}All hours logged · mark it complete</span>`;
     else if (r.late) status = `<span class="s warn">${svg("clock")}Tight · runs into the buffer</span>`;
-    else if (r.end >= 0){ const f = slotDate(ws, Math.floor(r.end / SPD), r.end % SPD); status = `<span class="s ok">${svg("check")}On track · done by ${esc(dFmt(f, {weekday:"short"}))} ${esc(tFmt(f))}</span>`; }
+    else if (r.end >= 0){ const f = slotDate(P.ws, Math.floor(r.end / SPD), r.end % SPD); status = `<span class="s ok">${svg("check")}On track · done by ${esc(dFmt(f, {weekday:"short"}))} ${esc(tFmt(f))}</span>`; }
     else status = `<span class="s muted">Not planned</span>`;
     const roll = !t.done && P.behind[t.id] ? `<span class="tag roll">${svg("roll")}Rolled over ${dur(P.behind[t.id])}</span>` : "";
     const sameWeek = due - ws < weekMs && due >= ws;
@@ -766,6 +774,7 @@ $("delBtn").onclick = () => {
 
 /* ---------- events ---------- */
 document.addEventListener("click", e => {
+  const wk = e.target.closest(".wk"); if (wk){ S.off = +wk.dataset.off; S.sel = null; render(); return; }
   const day = e.target.closest(".day"); if (day){ S.sel = +day.dataset.day; render(); return; }
   const chk = e.target.closest(".check"); if (chk){ toggleSession(chk); return; }
   const ed = e.target.closest("[data-edit]"); if (ed){ openSheet(ed.dataset.edit); return; }
@@ -782,7 +791,7 @@ $("copyTpl").onclick = async () => {
 let lastDay = new Date().toDateString();
 setInterval(() => {
   const n = new Date();
-  if (n.toDateString() !== lastDay){ lastDay = n.toDateString(); S.sel = null; replan(); } else render();
+  if (n.toDateString() !== lastDay){ lastDay = n.toDateString(); S.sel = null; S.off = 0; replan(); } else render();
 }, 60000);
 
 async function boot(){
