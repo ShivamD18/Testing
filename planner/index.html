@@ -1,0 +1,804 @@
+<title>Sunday Planner</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;600&display=swap">
+<style>
+/* Layout: header + stats, 7-day workload strip, then day checklist | deadline timeline (two columns ≥ 920px, stacked below), prompt guide last */
+:root{
+  --bg:#F3F5F6; --surface:#FFFFFF; --sunk:#E9EDF0; --ink:#141920; --muted:#58616F; --line:#DCE1E6;
+  --accent:#0D7A69; --accent-ink:#FFFFFF;
+  --p5:#D0293A; --p4:#D9650F; --p3:#A87E00; --p2:#2B66D3; --p1:#768090;
+  --ok:#0D7A69; --warn:#AE5C06; --bad:#C42435;
+  --hatch:rgba(20,25,32,.075);
+  --f-display:"Bricolage Grotesque","Inter",system-ui,sans-serif;
+  --f-body:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0E1115; --surface:#161A20; --sunk:#1E232A; --ink:#E6E9ED; --muted:#99A2AF; --line:#2A3038;
+  --accent:#3AC3AD; --accent-ink:#04201B;
+  --p5:#FF5D6C; --p4:#FF9445; --p3:#E9BF35; --p2:#6DA0FF; --p1:#98A1AF;
+  --ok:#3AC3AD; --warn:#F1A44A; --bad:#FF6271; --hatch:rgba(255,255,255,.06); color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#0E1115; --surface:#161A20; --sunk:#1E232A; --ink:#E6E9ED; --muted:#99A2AF; --line:#2A3038;
+  --accent:#3AC3AD; --accent-ink:#04201B;
+  --p5:#FF5D6C; --p4:#FF9445; --p3:#E9BF35; --p2:#6DA0FF; --p1:#98A1AF;
+  --ok:#3AC3AD; --warn:#F1A44A; --bad:#FF6271; --hatch:rgba(255,255,255,.06); color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.45}
+.wrap{max-width:1180px;margin:0 auto;padding-block:20px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:18px}
+h1,h2,h3{font-family:var(--f-display);margin:0;text-wrap:balance;letter-spacing:-.01em}
+h1{font-size:30px;line-height:1.1}
+h2{font-size:19px}
+.eyebrow{margin:0 0 2px;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.ic{width:18px;height:18px;flex:none}
+.ic.fill{fill:currentColor;fill-opacity:.18}
+
+/* header */
+.top{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px 24px}
+.top .brand{flex:1 1 220px;min-width:0}
+.stats{display:flex;flex-wrap:wrap;gap:8px}
+.stat{display:flex;flex-direction:column;padding:6px 12px;border-radius:10px;background:var(--surface);border:1px solid var(--line);min-width:96px}
+.stat b{font-family:var(--f-mono);font-size:17px;font-weight:600;font-variant-numeric:tabular-nums}
+.stat span{font-size:11.5px;color:var(--muted)}
+.stat.alert b{color:var(--bad)}
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--surface);border-radius:9px;padding:8px 14px;font-weight:600;font-size:14px;cursor:pointer}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.primary:hover{filter:brightness(1.07)}
+.btn.danger{color:var(--bad)}
+.btn.danger.armed{background:var(--bad);border-color:var(--bad);color:#fff}
+
+/* notices */
+#notices{display:flex;flex-direction:column;gap:8px}
+#notices:empty{display:none}
+.note{display:flex;gap:10px;align-items:flex-start;padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:var(--surface);font-size:14px}
+.note .ic{margin-top:1px}
+.note.bad{border-color:color-mix(in srgb,var(--bad) 45%,var(--line));background:color-mix(in srgb,var(--bad) 7%,var(--surface))}
+.note.bad .ic{color:var(--bad)}
+.note.warn{border-color:color-mix(in srgb,var(--warn) 45%,var(--line));background:color-mix(in srgb,var(--warn) 7%,var(--surface))}
+.note.warn .ic{color:var(--warn)}
+.note.info .ic{color:var(--accent)}
+.note ul{margin:4px 0 0;padding-left:18px}
+
+/* day strip */
+.days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+.day{display:flex;flex-direction:column;align-items:center;gap:3px;padding:9px 4px 8px;border-radius:11px;border:1px solid var(--line);background:var(--surface);cursor:pointer;min-width:0}
+.day:hover{border-color:var(--muted)}
+.day .dn{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.day .dd{font-family:var(--f-display);font-size:21px;font-weight:700;line-height:1.1}
+.day.today .dd{color:var(--accent)}
+.day.past{opacity:.62}
+.day[aria-pressed="true"]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent);opacity:1}
+.day .bar{width:78%;height:5px;border-radius:3px;background:var(--sunk);overflow:hidden}
+.day .bar i{display:block;height:100%;background:var(--accent);border-radius:3px}
+.day .hrs{font-family:var(--f-mono);font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+.day .dots{display:flex;gap:3px;height:7px}
+.day .dots i{width:7px;height:7px;border-radius:50%;background:var(--pc)}
+
+/* panels */
+.grid{display:grid;grid-template-columns:minmax(0,1fr);gap:18px;align-items:start}
+@media (min-width:920px){.grid{grid-template-columns:minmax(0,1.2fr) minmax(0,1fr)}}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px;min-width:0}
+.phead{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:6px 12px;margin-bottom:12px}
+.phead .sub{font-size:13px;color:var(--muted)}
+.prog{height:6px;border-radius:3px;background:var(--sunk);overflow:hidden;margin:-4px 0 14px}
+.prog i{display:block;height:100%;background:var(--accent)}
+
+.p5{--pc:var(--p5)}.p4{--pc:var(--p4)}.p3{--pc:var(--p3)}.p2{--pc:var(--p2)}.p1{--pc:var(--p1)}
+.badge{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:8px;color:var(--pc);background:color-mix(in srgb,var(--pc) 14%,var(--surface));border:1px solid color-mix(in srgb,var(--pc) 35%,transparent);flex:none}
+.plabel{font-size:11.5px;font-weight:600;color:var(--pc)}
+
+/* checklist */
+.list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:7px}
+.row{display:grid;grid-template-columns:66px 30px minmax(0,1fr) auto;gap:10px;align-items:center;padding:9px 10px;border-radius:10px;border:1px solid var(--line);background:var(--surface)}
+.row .time{font-family:var(--f-mono);font-size:12.5px;line-height:1.3;font-variant-numeric:tabular-nums;white-space:nowrap}
+.row .time small{display:block;color:var(--muted);font-size:11.5px}
+.row .title{font-weight:600;overflow-wrap:anywhere}
+.row .meta{display:flex;flex-wrap:wrap;gap:4px 8px;font-size:12.5px;color:var(--muted);margin-top:1px}
+.tag{display:inline-flex;align-items:center;gap:3px;font-size:11.5px;font-weight:600;padding:0 6px;border-radius:5px;background:var(--sunk);color:var(--muted)}
+.tag.warn{color:var(--warn);background:color-mix(in srgb,var(--warn) 12%,var(--surface))}
+.tag.roll{color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--surface))}
+.row.session{cursor:default;background:color-mix(in srgb,var(--pc) 4%,var(--surface))}
+.row.session.done{background:var(--surface)}
+.row.session.done .title{text-decoration:line-through;color:var(--muted)}
+.row.session.done .badge{opacity:.55}
+.row.session.past:not(.done){border-style:dashed}
+.row.fixed{background:var(--sunk);border-color:transparent;color:var(--muted)}
+.row.fixed .title{color:var(--ink);font-weight:500}
+.row.fixed .badge{color:var(--muted);background:var(--surface);border-color:var(--line)}
+.row.locked{background:repeating-linear-gradient(135deg,var(--hatch) 0 6px,transparent 6px 12px),var(--sunk)}
+.row.due{background:transparent;border:1px dashed color-mix(in srgb,var(--pc) 55%,var(--line))}
+.row.due .title{font-weight:500}
+.row.due .title b{color:var(--pc)}
+.check{width:34px;height:34px;border-radius:9px;border:2px solid var(--line);background:var(--surface);display:grid;place-items:center;cursor:pointer;color:transparent;transition:background .15s,border-color .15s}
+.check:hover{border-color:var(--accent)}
+.check[aria-checked="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.check .ic{width:18px;height:18px}
+.empty{padding:22px 12px;text-align:center;color:var(--muted);font-size:14px;border:1px dashed var(--line);border-radius:10px}
+.rollnote{font-size:13px;margin:0 0 10px;padding:8px 10px;border-radius:9px;background:color-mix(in srgb,var(--accent) 9%,var(--surface));display:flex;gap:8px;align-items:flex-start}
+.rollnote .ic{color:var(--accent)}
+
+/* deadlines */
+.ruler-wrap{overflow-x:auto;margin:0 -4px 14px;padding:0 4px}
+.ruler{position:relative;min-width:300px;border-radius:10px;background:var(--sunk)}
+.ruler .cols{position:absolute;inset:0;display:grid;grid-template-columns:repeat(7,1fr)}
+.ruler .cols div{border-left:1px solid var(--line);font-size:10.5px;font-weight:600;letter-spacing:.06em;color:var(--muted);padding:4px 0 0 5px;text-transform:uppercase}
+.ruler .cols div:first-child{border-left:0}
+.ruler .cols div.today{color:var(--accent)}
+.ruler .now{position:absolute;top:0;bottom:0;width:2px;background:var(--accent);border-radius:1px}
+.pin{position:absolute;width:24px;height:24px;margin-left:-12px;border-radius:50%;display:grid;place-items:center;color:var(--pc);background:var(--surface);border:2px solid var(--pc);cursor:pointer;padding:0}
+.pin .ic{width:13px;height:13px}
+.pin.done{opacity:.45}
+.dl{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.dlrow{display:grid;grid-template-columns:30px minmax(0,1fr) auto;gap:4px 10px;align-items:start;padding:10px;border-radius:10px;border:1px solid var(--line);cursor:pointer;background:var(--surface);text-align:left;width:100%}
+.dlrow:hover{border-color:var(--muted)}
+.dlrow .title{font-weight:600;overflow-wrap:anywhere}
+.dlrow .course{font-size:12.5px;color:var(--muted)}
+.dlrow .when{text-align:right;font-size:12.5px;color:var(--muted);white-space:nowrap}
+.dlrow .when b{display:block;font-family:var(--f-mono);font-size:13px;color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
+.dlrow .when b.over{color:var(--bad)}
+.dlrow .foot{grid-column:2 / 4;display:flex;flex-direction:column;gap:5px}
+.hbar{height:6px;border-radius:3px;background:var(--sunk);overflow:hidden;display:flex}
+.hbar i{display:block;height:100%;background:var(--pc)}
+.hbar i.plan{background:color-mix(in srgb,var(--pc) 32%,transparent)}
+.status{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;font-size:12.5px}
+.status .s{display:inline-flex;align-items:center;gap:4px;font-weight:600}
+.status .s .ic{width:14px;height:14px}
+.s.ok{color:var(--ok)}.s.warn{color:var(--warn)}.s.bad{color:var(--bad)}.s.muted{color:var(--muted)}
+.status .h{color:var(--muted);font-family:var(--f-mono);font-size:12px;font-variant-numeric:tabular-nums}
+.dlrow.isdone{opacity:.6}
+details.done-group summary{cursor:pointer;font-size:13px;color:var(--muted);font-weight:600;margin:10px 0 8px}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:14px;font-size:12px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:5px}
+.legend .ic{width:15px;height:15px;color:var(--pc)}
+
+/* prompt guide */
+.howto{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}
+@media (min-width:920px){.howto{grid-template-columns:minmax(0,1fr) minmax(0,1.15fr)}}
+.howto p{margin:6px 0 0;max-width:62ch;color:var(--muted);font-size:14px}
+.howto ol{margin:10px 0 0;padding-left:20px;font-size:14px;display:flex;flex-direction:column;gap:5px;max-width:62ch}
+.tpl{position:relative;min-width:0}
+.tpl pre{margin:0;padding:14px;border-radius:10px;background:var(--sunk);font-family:var(--f-mono);font-size:12.5px;line-height:1.55;overflow-x:auto;white-space:pre}
+.tpl .btn{position:absolute;top:8px;right:8px;padding:5px 10px;font-size:12.5px}
+
+/* sheet */
+dialog{border:1px solid var(--line);border-radius:16px;padding:0;background:var(--surface);color:var(--ink);width:min(520px,calc(100vw - 24px));max-height:calc(100dvh - 24px)}
+dialog::backdrop{background:rgba(8,10,14,.45)}
+.sheet{padding:18px;display:flex;flex-direction:column;gap:14px}
+.sheet .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.field{display:flex;flex-direction:column;gap:5px;min-width:0}
+.field label,.field .lbl{font-size:12.5px;font-weight:600;color:var(--muted)}
+.field input,.field select,.field textarea{font:inherit;font-size:15px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:8px 10px;width:100%;min-width:0}
+.field textarea{resize:vertical;min-height:56px}
+.prios{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+.prios label{display:flex;flex-direction:column;align-items:center;gap:2px;padding:7px 2px;border-radius:9px;border:1px solid var(--line);cursor:pointer;color:var(--pc);font-size:11px;font-weight:600}
+.prios label b{font-family:var(--f-mono);font-size:14px}
+.prios input{position:absolute;opacity:0;pointer-events:none}
+.prios label:has(input:checked){background:color-mix(in srgb,var(--pc) 14%,var(--surface));border-color:var(--pc)}
+.prios label:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:2px}
+.sheet .actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:center}
+.sheet .actions div{display:flex;gap:8px;flex-wrap:wrap}
+.sheet .err{color:var(--bad);font-size:13px;margin:0}
+
+@media (max-width:520px){
+  h1{font-size:25px}
+  .row{grid-template-columns:60px 28px minmax(0,1fr) auto;gap:8px;padding:8px}
+  .row .time{font-size:11px}.row .time small{font-size:10.5px}
+  .badge{width:28px;height:28px}
+  .day{padding:7px 2px}
+  .day .dd{font-size:18px}
+  .stat{min-width:0;flex:1 1 0}
+  .sheet .row2{grid-template-columns:1fr}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <p class="eyebrow" id="weekLabel">This week</p>
+      <h1>Sunday Planner</h1>
+    </div>
+    <div class="stats" id="stats"></div>
+    <button class="btn primary" id="addBtn" type="button">+ Add task</button>
+  </header>
+
+  <div id="notices"></div>
+
+  <nav class="days" id="days" aria-label="Days of this week"></nav>
+
+  <main class="grid">
+    <section class="panel" aria-labelledby="dayTitle">
+      <div class="phead"><h2 id="dayTitle">Today</h2><span class="sub" id="daySub"></span></div>
+      <div id="dayBody"><div class="empty">Loading your week…</div></div>
+    </section>
+    <section class="panel" aria-labelledby="dlTitle">
+      <div class="phead"><h2 id="dlTitle">Deadlines</h2><span class="sub" id="dlSub"></span></div>
+      <div id="dlBody"><div class="empty">Loading deadlines…</div></div>
+      <div class="legend" id="legend"></div>
+    </section>
+  </main>
+
+  <section class="panel howto" aria-labelledby="howTitle">
+    <div>
+      <h2 id="howTitle">Updating your week</h2>
+      <p>Send Claude your week in plain words. Claude saves it here, and the planner builds the schedule around your fixed times.</p>
+      <ol>
+        <li><b>Sunday:</b> send the full week: classes, labs, shifts and everything due, with hours and a priority from 1 to 5.</li>
+        <li><b>During the week:</b> tell Claude what changed, for example "essay is now due Wednesday" or "add a quiz Friday, 1 hr, priority 2".</li>
+        <li><b>As you work:</b> tick sessions off here. Anything you don't finish rolls forward on its own.</li>
+      </ol>
+      <p>Work can overlap class times but never labs or work shifts. Each task is planned to finish 1 day before it's due (2 days for priority 5).</p>
+    </div>
+    <div class="tpl">
+      <pre id="tplText">Week of Nov 22.
+Classes: Calc II MWF 9:00–9:50, Bio 201 TTh 11:00–12:15
+Labs: Bio lab Wed 2:30–5:30pm
+Work: Fri 4–10pm, Sat 10am–4pm
+Due:
+- Bio lab report, Thu 11:59pm, 4 hrs, priority 4, split it up
+- Calc problem set, Fri 5pm, 2 hrs, priority 3, one sitting
+- History essay, next Tue 9am, 6 hrs, priority 5</pre>
+      <button class="btn" type="button" id="copyTpl">Copy</button>
+    </div>
+  </section>
+</div>
+
+<dialog id="sheet" aria-labelledby="sheetTitle">
+  <form class="sheet" id="taskForm" method="dialog" novalidate>
+    <h2 id="sheetTitle">Add task</h2>
+    <div class="field"><label for="f-title">What is it?</label><input id="f-title" name="title" required placeholder="Bio lab report"></div>
+    <div class="row2">
+      <div class="field"><label for="f-course">Class</label><input id="f-course" name="course" placeholder="Bio 201"></div>
+      <div class="field"><label for="f-due">Due</label><input id="f-due" name="due" type="datetime-local" required></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label for="f-hours">Hours of work</label><input id="f-hours" name="hours" type="number" min="0.25" step="0.25" required></div>
+      <div class="field"><label for="f-mode">How to plan it</label>
+        <select id="f-mode" name="mode">
+          <option value="auto">Let the planner decide</option>
+          <option value="spread">Split it up across days</option>
+          <option value="single">One sitting</option>
+        </select>
+      </div>
+    </div>
+    <div class="field"><span class="lbl" id="prioLbl">Priority</span><div class="prios" id="prios" role="radiogroup" aria-labelledby="prioLbl"></div></div>
+    <div class="field"><label for="f-notes">Notes</label><textarea id="f-notes" name="notes" rows="2"></textarea></div>
+    <p class="err" id="formErr" hidden></p>
+    <div class="actions">
+      <div id="editOnly">
+        <button class="btn" type="button" id="doneBtn">Mark complete</button>
+        <button class="btn danger" type="button" id="delBtn">Delete</button>
+      </div>
+      <div>
+        <button class="btn" type="button" id="cancelBtn">Cancel</button>
+        <button class="btn primary" type="submit" id="saveBtn">Save</button>
+      </div>
+    </div>
+  </form>
+</dialog>
+
+<script>
+(() => {
+"use strict";
+/* ---------- constants & helpers ---------- */
+const SLOT = 5, SPD = 288; // 5-minute slots, slots per day
+const DEF = { weekdayStart:"08:00", weekdayEnd:"23:00", weekendStart:"10:00", weekendEnd:"23:00",
+  bufferDays:1, bufferDaysP5:2, minBlock:30, maxBlock:120, gap:10 };
+const PRI = {5:"Critical",4:"High",3:"Medium",2:"Low",1:"Minimal"};
+const ICON = {
+  5:'<path class="f" d="M12 3c.9 3.4 5 5.6 5 10.2A5 5 0 0 1 7 13.2c0-2.3 1.1-3.8 2.3-5 .2 1.7 1 2.9 2.3 3.4C11 8.9 11.1 6 12 3z"/>',
+  4:'<path class="f" d="M12 4 3 19.5h18z"/><path d="M12 10v4.2"/><path d="M12 16.9v.2"/>',
+  3:'<path class="f" d="m12 3.6 2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/>',
+  2:'<path class="f" d="M4 5.6c2.6-1 5.4-.9 8 .6 2.6-1.5 5.4-1.6 8-.6v13.2c-2.6-1-5.4-.9-8 .6-2.6-1.5-5.4-1.6-8-.6z"/><path d="M12 6.2v13.2"/>',
+  1:'<path class="f" d="M7.2 18.2h9.6a3.9 3.9 0 0 0 .5-7.8 5.4 5.4 0 0 0-10.4 1 3.4 3.4 0 0 0 .3 6.8z"/>',
+  lock:'<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+  cap:'<path d="m2.5 9 9.5-4.5L21.5 9 12 13.5z"/><path d="M6.5 11v4.5c1.5 1.3 3.4 2 5.5 2s4-.7 5.5-2V11"/>',
+  flag:'<path d="M5 21V4"/><path d="M5 4h11l-2 4 2 4H5"/>',
+  check:'<path d="m5 12.5 4.5 4.5L19 7.5"/>',
+  warn:'<circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5"/><path d="M12 16.3v.2"/>',
+  info:'<circle cx="12" cy="12" r="9"/><path d="M12 11v5.5"/><path d="M12 7.7v.2"/>',
+  roll:'<path d="M4 12a8 8 0 0 1 14-5.3"/><path d="M18 3v4h-4"/><path d="M20 12a8 8 0 0 1-14 5.3"/><path d="M6 21v-4h4"/>',
+  clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'
+};
+const svg = (k, cls="") => `<svg class="ic ${cls}" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICON[k].replace(/class="f"/g,'fill="currentColor" fill-opacity=".2"')}</svg>`;
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const pad = n => String(n).padStart(2, "0");
+const hm = s => { const m = /^(\d{1,2}):(\d{2})/.exec(s || ""); return m ? (+m[1]) * 60 + (+m[2]) : 0; };
+function parseLocal(s){
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/.exec(s || "");
+  return m ? new Date(+m[1], +m[2]-1, +m[3], +(m[4]||0), +(m[5]||0)) : null;
+}
+const fmtLocal = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+const startOfDay = d => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+const startOfWeek = d => { const s = startOfDay(d); s.setDate(s.getDate() - s.getDay()); return s; };
+const dayDate = (ws, i) => new Date(ws.getFullYear(), ws.getMonth(), ws.getDate() + i);
+const dayIndex = (ws, d) => Math.round((Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) - Date.UTC(ws.getFullYear(), ws.getMonth(), ws.getDate())) / 864e5);
+const slotOf = d => Math.floor((d.getHours()*60 + d.getMinutes()) / SLOT);
+const lin = (ws, d) => dayIndex(ws, d) * SPD + slotOf(d);
+const slotDate = (ws, day, slot) => new Date(ws.getFullYear(), ws.getMonth(), ws.getDate() + day, 0, slot * SLOT);
+const clampP = p => Math.min(5, Math.max(1, Math.round(+p || 3)));
+const dur = min => { min = Math.round(min); const h = Math.floor(min/60), m = min % 60; return h && m ? `${h}h ${m}m` : h ? `${h}h` : `${m}m`; };
+const tFmt = d => d.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"});
+const dFmt = (d, o) => d.toLocaleDateString([], o);
+function countdown(ms){
+  const over = ms < 0; ms = Math.abs(ms);
+  const m = Math.floor(ms/6e4), d = Math.floor(m/1440), h = Math.floor((m % 1440)/60), mm = m % 60;
+  const s = d ? `${d}d ${h}h` : h ? `${h}h ${mm}m` : `${mm}m`;
+  return over ? `${s} ago` : `in ${s}`;
+}
+function blockDays(b, ws, nDays){
+  if (b.date){ const d = parseLocal(b.date); if (!d) return []; const i = dayIndex(ws, d); return i >= 0 && i < nDays ? [i] : []; }
+  const days = Array.isArray(b.days) ? b.days.map(Number) : [];
+  const out = []; for (let i = 0; i < nDays; i++) if (days.includes((ws.getDay() + i) % 7)) out.push(i);
+  return out;
+}
+const isHard = b => b.hard != null ? !!b.hard : b.kind !== "class";
+const logMinutes = t => (t.log || []).reduce((a, l) => { const s = parseLocal(l.s), e = parseLocal(l.e); return a + (s && e ? Math.max(0, (e - s) / 6e4) : 0); }, 0);
+
+/* ---------- scheduler ---------- */
+function run({tasks, blocks, cfg, ws, nDays, nowP, includeLogs, behind}){
+  const occ = Array.from({length:nDays}, () => new Uint8Array(SPD)); // 0 free · 1 class (soft) · 2 blocked · 3 session/gap
+  const gapS = Math.round(cfg.gap / SLOT), minS = Math.round(cfg.minBlock / SLOT), maxS = Math.round(cfg.maxBlock / SLOT);
+  for (let d = 0; d < nDays; d++){
+    const dow = (ws.getDay() + d) % 7, we = dow === 0 || dow === 6;
+    const a = Math.floor(hm(we ? cfg.weekendStart : cfg.weekdayStart) / SLOT), e = Math.ceil(hm(we ? cfg.weekendEnd : cfg.weekdayEnd) / SLOT);
+    for (let i = 0; i < SPD; i++) if (i < a || i >= e) occ[d][i] = 2;
+  }
+  for (const b of blocks){
+    const s = Math.floor(hm(b.start) / SLOT), e = Math.min(SPD, Math.ceil(hm(b.end) / SLOT)), hard = isHard(b);
+    for (const d of blockDays(b, ws, nDays)) for (let i = s; i < e; i++){ if (hard) occ[d][i] = 2; else if (occ[d][i] === 0) occ[d][i] = 1; }
+  }
+  for (let p = 0; p < Math.min(nowP, nDays * SPD); p++) occ[Math.floor(p / SPD)][p % SPD] = 2;
+
+  const sessions = [], res = {}, load = new Array(nDays).fill(0);
+  const mark = (d, s, len) => {
+    for (let i = s; i < s + len; i++) occ[d][i] = 3;
+    for (let g = 1; g <= gapS; g++){
+      if (s - g >= 0 && occ[d][s-g] < 2) occ[d][s-g] = 3;
+      if (s + len - 1 + g < SPD && occ[d][s+len-1+g] < 2) occ[d][s+len-1+g] = 3;
+    }
+  };
+  const free = (v, soft) => v === 0 || (soft && v === 1);
+  const findRun = (d, len, to, soft) => { let run = 0; for (let i = 0; i < to; i++){ run = free(occ[d][i], soft) ? run + 1 : 0; if (run >= len) return i - len + 1; } return -1; };
+  const largest = (d, to, soft) => { let run = 0, best = {start:-1, len:0}; for (let i = 0; i < to; i++){ run = free(occ[d][i], soft) ? run + 1 : 0; if (run > best.len) best = {start:i-run+1, len:run}; } return best; };
+
+  if (includeLogs) for (const t of tasks) (t.log || []).forEach((l, li) => {
+    const sd = parseLocal(l.s), ed = parseLocal(l.e); if (!sd || !ed) return;
+    const d = dayIndex(ws, sd), s = slotOf(sd); let len = Math.round((ed - sd) / 6e4 / SLOT);
+    if (d < 0 || d >= nDays || len <= 0) return; len = Math.min(len, SPD - s);
+    mark(d, s, len); load[d] += len * SLOT; sessions.push({task:t.id, day:d, start:s, len, done:true, li});
+  });
+
+  const active = tasks.filter(t => !t.done).map(t => ({t, due:parseLocal(t.due),
+    R:Math.ceil(Math.max(0, t.hours * 60 - (includeLogs ? logMinutes(t) : 0)) / SLOT)})).filter(x => x.due && x.R > 0);
+  active.sort((a, b) => b.t.priority - a.t.priority || (behind[b.t.id] ? 1 : 0) - (behind[a.t.id] ? 1 : 0) || a.due - b.due);
+  // daily load target: spread the total work evenly over the days left until the last deadline (at least 2h/day)
+  const nowDay = Math.floor(nowP / SPD);
+  const lastDue = active.reduce((m, x) => Math.max(m, Math.min(nDays - 1, dayIndex(ws, x.due))), nowDay);
+  const totalMin = active.reduce((a, x) => a + x.R * SLOT, 0) + load.reduce((a, b) => a + b, 0);
+  const cap = Math.max(120, Math.ceil(totalMin / Math.max(1, lastDue - nowDay + 1) / 15) * 15);
+
+  for (const x of active){
+    const id = x.t.id, dueP = lin(ws, x.due);
+    const tgt = new Date(x.due); tgt.setDate(tgt.getDate() - (x.t.priority === 5 ? cfg.bufferDaysP5 : cfg.bufferDays));
+    const tgtP = Math.max(nowP, lin(ws, tgt));
+    let R = x.R; const info = {need:R * SLOT, placed:0, late:false, forced:false, short:0, end:-1, single:false};
+    const put = (d, s, len, late) => { mark(d, s, len); load[d] += len * SLOT; sessions.push({task:id, day:d, start:s, len, late}); R -= len; info.placed += len * SLOT; if (late) info.late = true; info.end = Math.max(info.end, d * SPD + s + len); };
+    const phases = [[tgtP,false,false],[tgtP,true,false],[dueP,false,true],[dueP,true,true]];
+    const mode = x.t.mode || "auto";
+    if (mode === "single" || (mode === "auto" && R * SLOT <= cfg.maxBlock)){
+      for (const [lim, soft, late] of phases){
+        const cands = [];
+        for (let d = 0; d < nDays; d++){
+          const to = Math.min(SPD, lim - d * SPD); if (to <= 0) break;
+          const s = findRun(d, R, to, soft); if (s >= 0) cands.push({d, s});
+        }
+        if (!cands.length) continue;
+        // earliest day that stays under the daily target, otherwise the lightest day
+        const pick = cands.find(c => load[c.d] + R * SLOT <= cap) || cands.reduce((a, c) => load[c.d] < load[a.d] ? c : a);
+        put(pick.d, pick.s, R, late); info.single = true; break;
+      }
+      if (R > 0 && mode === "single") info.forced = true;
+    }
+    for (const [lim, soft, late] of phases){
+      if (R <= 0) break;
+      for (let pass = 0; pass < 4 && R > 0; pass++){
+        const days = [];
+        for (let d = 0; d < nDays; d++){ const to = Math.min(SPD, lim - d * SPD); if (to <= 0) break; if (largest(d, to, soft).len >= Math.min(minS, R)) days.push([d, to]); }
+        if (!days.length) break;
+        let placedThisPass = false;
+        days.forEach(([d, to], i) => {
+          if (R <= 0) return;
+          let want = pass === 0 ? Math.min(maxS, Math.max(minS, Math.ceil(R / (days.length - i) / 3) * 3)) : Math.min(R, maxS);
+          want = Math.min(want, R);
+          let s = findRun(d, want, to, soft), len = want;
+          if (s < 0){ const lr = largest(d, to, soft); if (lr.len >= Math.min(minS, R)){ s = lr.start; len = Math.min(lr.len, want); } }
+          if (s >= 0){ put(d, s, len, late); placedThisPass = true; }
+        });
+        if (!placedThisPass) break;
+      }
+    }
+    info.short = R * SLOT; res[id] = info;
+  }
+  return {sessions, res};
+}
+
+function computePlan(now){
+  const cfg = {...DEF, ...(S.cfg || {})};
+  for (const k of ["bufferDays","bufferDaysP5","minBlock","maxBlock","gap"]) cfg[k] = +cfg[k];
+  const ws = startOfWeek(now);
+  const tasks = S.tasks.map(t => ({...t, hours:Math.max(0, +t.hours || 0), priority:clampP(t.priority), log:Array.isArray(t.log) ? t.log : []}));
+  let lastDay = 7;
+  for (const t of tasks){ const due = parseLocal(t.due); if (due && !t.done) lastDay = Math.max(lastDay, dayIndex(ws, due) + 1); }
+  const nDays = Math.min(35, lastDay);
+  const nowP = Math.max(0, dayIndex(ws, now) * SPD + Math.ceil((now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60) / SLOT));
+
+  // baseline: the plan as it stood when the week was set up, used to spot work that rolled over
+  let base = parseLocal(cfg.plannedAt); if (!base || base < ws || base > now) base = ws;
+  const baseTasks = tasks.filter(t => { const c = parseLocal(t.created); return !c || c <= base; }).map(t => ({...t, done:false}));
+  const b = run({tasks:baseTasks, blocks:S.blocks, cfg, ws, nDays, nowP:Math.max(0, lin(ws, base)), includeLogs:false, behind:{}});
+  const expected = {};
+  for (const s of b.sessions) if (s.day * SPD + s.start + s.len <= nowP) expected[s.task] = (expected[s.task] || 0) + s.len * SLOT;
+  const doneMin = {}, behind = {};
+  for (const t of tasks){ doneMin[t.id] = logMinutes(t); const lag = (expected[t.id] || 0) - doneMin[t.id]; if (!t.done && lag >= 15) behind[t.id] = lag; }
+
+  const r = run({tasks, blocks:S.blocks, cfg, ws, nDays, nowP, includeLogs:true, behind});
+  r.sessions.sort((a, b) => a.day - b.day || a.start - b.start);
+  const nth = {}, total = {};
+  for (const s of r.sessions){ total[s.task] = (total[s.task] || 0) + 1; s.n = (nth[s.task] = (nth[s.task] || 0) + 1); }
+  for (const s of r.sessions) s.of = total[s.task];
+  return {...r, ws, nDays, nowP, behind, doneMin, cfg, tasks, at:now};
+}
+
+/* ---------- state ---------- */
+const S = {db:null, tasks:[], blocks:[], cfg:null, got:{tasks:false, blocks:false, cfg:false}, fresh:false,
+  timedOut:false, noDb:false, err:null, plan:null, sel:null, editing:null, writeErr:null};
+const $ = id => document.getElementById(id);
+function replan(){ S.plan = computePlan(new Date()); render(); }
+
+/* ---------- rendering ---------- */
+function taskById(id){ return S.plan?.tasks.find(t => t.id === id); }
+
+function render(){
+  const P = S.plan, now = new Date();
+  const ws = P ? P.ws : startOfWeek(now);
+  const we = dayDate(ws, 6);
+  $("weekLabel").textContent = ws.getMonth() === we.getMonth()
+    ? `Week of ${dFmt(ws, {month:"short", day:"numeric"})} – ${we.getDate()}`
+    : `Week of ${dFmt(ws, {month:"short", day:"numeric"})} – ${dFmt(we, {month:"short", day:"numeric"})}`;
+  renderNotices(P, now);
+  if (!P || !S.got.tasks){ $("stats").innerHTML = ""; renderDays(null, ws, now); return; }
+  renderStats(P, now);
+  renderDays(P, ws, now);
+  renderDay(P, now);
+  renderDeadlines(P, now);
+}
+
+function renderNotices(P, now){
+  const out = [];
+  if (S.noDb) out.push(`<div class="note info">${svg("info")}<div>Your saved week loads when this page is opened on claude.ai while signed in.</div></div>`);
+  if (S.err) out.push(`<div class="note bad">${svg("warn")}<div>Your planner data stopped loading (${esc(S.err.code || "error")}). Reload the page to try again.</div></div>`);
+  else if (S.timedOut && !S.fresh) out.push(`<div class="note warn">${svg("warn")}<div>Can't reach your saved planner yet. ${S.got.tasks ? "What you see may be out of date." : "Check your connection."}</div></div>`);
+  if (S.writeErr) out.push(`<div class="note bad">${svg("warn")}<div>That change wasn't saved (${esc(S.writeErr)}). Try again in a moment.</div></div>`);
+  if (P){
+    if (S.tasks.some(t => t.example) || S.blocks.some(b => b.example))
+      out.push(`<div class="note info">${svg("info")}<div><b>This is an example week.</b> Send Claude your real classes, shifts and due dates and it will replace these.</div></div>`);
+    const short = [], forced = [];
+    for (const t of P.tasks){
+      const r = P.res[t.id]; if (!r || t.done) continue;
+      const due = parseLocal(t.due);
+      if (r.short > 0) short.push(`<li><b>${esc(t.title)}</b>: ${dur(r.short)} doesn't fit before ${esc(dFmt(due, {weekday:"short"}))} ${esc(tFmt(due))}</li>`);
+      else if (r.forced) forced.push(esc(t.title));
+    }
+    if (short.length) out.push(`<div class="note bad">${svg("warn")}<div><b>Not enough time.</b><ul>${short.join("")}</ul>Lower another task's priority, cut hours, or ask Claude to move a deadline.</div></div>`);
+    if (forced.length) out.push(`<div class="note warn">${svg("warn")}<div>No free window was long enough for ${forced.join(", ")} in one sitting, so it was split into shorter sessions.</div></div>`);
+  }
+  $("notices").innerHTML = out.join("");
+}
+
+function renderStats(P, now){
+  let planned = 0, done = 0;
+  for (const s of P.sessions) if (s.day < 7){ if (s.done) done += s.len * SLOT; else planned += s.len * SLOT; }
+  const ws = P.ws, we = dayDate(ws, 7);
+  const dueWeek = P.tasks.filter(t => { const d = parseLocal(t.due); return d && !t.done && d >= now && d < we; }).length;
+  const attention = P.tasks.filter(t => { if (t.done) return false; const r = P.res[t.id], d = parseLocal(t.due); return (r && (r.short > 0 || r.late)) || (d && d < now); }).length;
+  $("stats").innerHTML = `
+    <div class="stat"><b>${dur(planned)}</b><span>work left this week</span></div>
+    <div class="stat"><b>${dur(done)}</b><span>done</span></div>
+    <div class="stat"><b>${dueWeek}</b><span>due this week</span></div>
+    <div class="stat ${attention ? "alert" : ""}"><b>${attention}</b><span>need attention</span></div>`;
+}
+
+function dayItems(P, d){
+  const items = [];
+  for (const b of S.blocks){
+    if (!blockDays(b, P.ws, P.nDays).includes(d)) continue;
+    items.push({type:"fixed", s:Math.floor(hm(b.start)/SLOT), e:Math.ceil(hm(b.end)/SLOT), b});
+  }
+  for (const s of P.sessions) if (s.day === d) items.push({type:"session", s:s.start, e:s.start + s.len, sess:s});
+  for (const t of P.tasks){
+    const due = parseLocal(t.due); if (!due || t.done) continue;
+    if (dayIndex(P.ws, due) === d) items.push({type:"due", s:slotOf(due), e:slotOf(due), t});
+  }
+  const ord = {fixed:0, session:1, due:2};
+  items.sort((a, b) => a.s - b.s || ord[a.type] - ord[b.type]);
+  return items;
+}
+
+function renderDays(P, ws, now){
+  const today = dayIndex(ws, now);
+  if (S.sel == null) S.sel = Math.min(6, Math.max(0, today));
+  let maxMin = 240; const mins = [];
+  for (let d = 0; d < 7; d++){ let m = 0; if (P) for (const s of P.sessions) if (s.day === d) m += s.len * SLOT; mins.push(m); maxMin = Math.max(maxMin, m); }
+  let html = "";
+  for (let d = 0; d < 7; d++){
+    const date = dayDate(ws, d);
+    let dots = "";
+    if (P){
+      const ps = P.tasks.filter(t => { const du = parseLocal(t.due); return du && !t.done && dayIndex(ws, du) === d; }).map(t => t.priority).sort((a,b)=>b-a).slice(0,4);
+      dots = ps.map(p => `<i class="p${p}"></i>`).join("");
+    }
+    const label = `${dFmt(date, {weekday:"long", month:"short", day:"numeric"})}, ${dur(mins[d])} of work${dots ? ", deadlines due" : ""}`;
+    html += `<button type="button" class="day ${d === today ? "today" : ""} ${d < today ? "past" : ""}" data-day="${d}" aria-pressed="${d === S.sel}" aria-label="${esc(label)}">
+      <span class="dn">${esc(dFmt(date, {weekday:"short"}))}</span>
+      <span class="dd">${date.getDate()}</span>
+      <span class="bar"><i style="width:${Math.round(mins[d] / maxMin * 100)}%"></i></span>
+      <span class="hrs">${mins[d] ? dur(mins[d]) : "—"}</span>
+      <span class="dots">${dots}</span>
+    </button>`;
+  }
+  $("days").innerHTML = html;
+}
+
+function overlapName(P, d, s, e){
+  for (const b of S.blocks){
+    if (isHard(b) || !blockDays(b, P.ws, P.nDays).includes(d)) continue;
+    const bs = Math.floor(hm(b.start)/SLOT), be = Math.ceil(hm(b.end)/SLOT);
+    if (s < be && bs < e) return b.title;
+  }
+  return null;
+}
+
+function renderDay(P, now){
+  const d = S.sel, date = dayDate(P.ws, d), today = dayIndex(P.ws, now);
+  $("dayTitle").textContent = d === today ? `Today · ${dFmt(date, {weekday:"long"})}` : dFmt(date, {weekday:"long", month:"short", day:"numeric"});
+  const items = dayItems(P, d);
+  const sess = items.filter(i => i.type === "session");
+  const doneN = sess.filter(i => i.sess.done).length;
+  const leftMin = sess.filter(i => !i.sess.done).reduce((a, i) => a + i.sess.len * SLOT, 0);
+  $("daySub").textContent = sess.length ? `${doneN} of ${sess.length} sessions done · ${dur(leftMin)} left` : "";
+  let html = sess.length ? `<div class="prog" role="progressbar" aria-label="Sessions done" aria-valuemin="0" aria-valuemax="${sess.length}" aria-valuenow="${doneN}"><i style="width:${Math.round(doneN / sess.length * 100)}%"></i></div>` : "";
+
+  if (d === today){
+    const rolled = Object.entries(P.behind).map(([id, m]) => { const t = taskById(id); return t ? `<b>${esc(t.title)}</b> (${dur(m)})` : ""; }).filter(Boolean);
+    if (rolled.length) html += `<p class="rollnote">${svg("roll")}<span>Rolled over from earlier this week: ${rolled.join(", ")}. It's planned first where it fits.</span></p>`;
+  }
+  if (d < today) html += `<p class="rollnote">${svg("roll")}<span>Anything left unticked on this day has moved forward into the days ahead.</span></p>`;
+
+  if (!items.length){
+    html += `<div class="empty">${d < today ? "Nothing logged on this day." : "Nothing scheduled. This day is free."}</div>`;
+  } else {
+    html += `<ul class="list">`;
+    const firstPlanned = {};
+    for (const s of P.sessions) if (!s.done && firstPlanned[s.task] == null) firstPlanned[s.task] = s;
+    for (const it of items){
+      const st = slotDate(P.ws, d, it.s), en = slotDate(P.ws, d, it.e);
+      if (it.type === "fixed"){
+        const b = it.b, hard = isHard(b);
+        const kind = b.kind === "class" ? "Class" : b.kind === "lab" ? "Lab" : b.kind === "work" ? "Work shift" : "Busy";
+        html += `<li class="row fixed ${hard ? "locked" : ""}">
+          <div class="time">${esc(tFmt(st))}<small>${esc(tFmt(en))}</small></div>
+          <span class="badge">${svg(hard ? "lock" : "cap")}</span>
+          <div><div class="title">${esc(b.title)}</div><div class="meta"><span>${kind}${b.location ? " · " + esc(b.location) : ""}</span><span>${hard ? "Locked, nothing planned here" : "Work may overlap"}</span></div></div>
+          <span></span></li>`;
+      } else if (it.type === "due"){
+        const t = it.t, due = parseLocal(t.due);
+        html += `<li class="row due p${t.priority}">
+          <div class="time">${esc(tFmt(due))}</div>
+          <span class="badge">${svg("flag")}</span>
+          <div><div class="title"><b>Due:</b> ${esc(t.title)}</div><div class="meta"><span>${esc(t.course || "")}</span><span class="plabel">${svg(t.priority)} P${t.priority} ${PRI[t.priority]}</span></div></div>
+          <span></span></li>`;
+      } else {
+        const s = it.sess, t = taskById(s.task); if (!t) continue;
+        const past = !s.done && (d * SPD + s.start + s.len) <= Math.floor((now - P.ws) / 6e4 / SLOT);
+        const ov = overlapName(P, d, it.s, it.e);
+        const tags = [];
+        if (s.of > 1) tags.push(`<span>Part ${s.n} of ${s.of}</span>`);
+        if (ov) tags.push(`<span class="tag">During ${esc(ov)}</span>`);
+        if (s.late) tags.push(`<span class="tag warn">Inside buffer</span>`);
+        if (!s.done && P.behind[t.id] && firstPlanned[t.id] === s) tags.push(`<span class="tag roll">${svg("roll")}Rolled over</span>`);
+        const label = `${t.title}, ${tFmt(st)} to ${tFmt(en)}`;
+        html += `<li class="row session p${t.priority} ${s.done ? "done" : ""} ${past ? "past" : ""}">
+          <div class="time">${esc(tFmt(st))}<small>${esc(tFmt(en))}</small></div>
+          <span class="badge" title="Priority ${t.priority}: ${PRI[t.priority]}">${svg(t.priority)}</span>
+          <div><div class="title">${esc(t.title)}</div><div class="meta"><span>${esc(t.course || "")}${t.course ? " · " : ""}${dur(s.len * SLOT)}</span>${tags.join("")}</div></div>
+          <button type="button" class="check" role="checkbox" aria-checked="${!!s.done}" aria-label="${esc(label)}" data-task="${esc(t.id)}" data-day="${d}" data-start="${s.start}" data-len="${s.len}" data-li="${s.done ? s.li : ""}">${svg("check")}</button>
+        </li>`;
+      }
+    }
+    html += `</ul>`;
+  }
+  $("dayBody").innerHTML = html;
+}
+
+function renderDeadlines(P, now){
+  const ws = P.ws, weekMs = 7 * 864e5;
+  const tasks = [...P.tasks].filter(t => parseLocal(t.due)).sort((a, b) => parseLocal(a.due) - parseLocal(b.due) || b.priority - a.priority);
+  const open = tasks.filter(t => !t.done), done = tasks.filter(t => t.done);
+  $("dlSub").textContent = open.length ? `${open.length} open` : "";
+
+  // ruler with pins
+  const inWeek = tasks.filter(t => { const d = parseLocal(t.due); return d >= ws && d - ws < weekMs; });
+  const lanes = []; const pins = [];
+  for (const t of inWeek){
+    const x = (parseLocal(t.due) - ws) / weekMs * 100;
+    let lane = lanes.findIndex(last => x - last > 7); if (lane < 0){ lane = lanes.length; lanes.push(x); } else lanes[lane] = x;
+    pins.push({t, x, lane});
+  }
+  const later = open.length - inWeek.filter(t => !t.done).length;
+  const h = 26 + Math.max(1, lanes.length) * 28 + 6;
+  const nowX = (now - ws) / weekMs * 100;
+  let cols = ""; const today = dayIndex(ws, now);
+  for (let d = 0; d < 7; d++) cols += `<div class="${d === today ? "today" : ""}">${esc(dFmt(dayDate(ws, d), {weekday:"narrow"}))}</div>`;
+  let html = `<div class="ruler-wrap"><div class="ruler" style="height:${h}px" aria-hidden="true"><div class="cols">${cols}</div>
+    ${nowX >= 0 && nowX <= 100 ? `<div class="now" style="left:${nowX.toFixed(2)}%"></div>` : ""}
+    ${pins.map(p => `<button type="button" tabindex="-1" class="pin p${p.t.priority} ${p.t.done ? "done" : ""}" data-edit="${esc(p.t.id)}" title="${esc(p.t.title)}" style="left:${Math.min(97, Math.max(3, p.x)).toFixed(2)}%;top:${24 + p.lane * 28}px">${svg(p.t.priority)}</button>`).join("")}
+  </div></div>`;
+  if (later > 0) html += `<p class="sub" style="margin:-6px 0 12px;font-size:12.5px;color:var(--muted)">+ ${later} due after Saturday (listed below)</p>`;
+
+  if (!tasks.length) html += `<div class="empty">No deadlines yet. Send Claude what's due this week and it will appear here.</div>`;
+  const row = t => {
+    const due = parseLocal(t.due), r = P.res[t.id] || {}, doneM = P.doneMin[t.id] || 0, total = Math.max(1, t.hours * 60);
+    const planned = P.sessions.filter(s => s.task === t.id && !s.done).reduce((a, s) => a + s.len * SLOT, 0);
+    const pctDone = Math.min(100, doneM / total * 100), pctPlan = Math.min(100 - pctDone, planned / total * 100);
+    const ms = due - now;
+    let status;
+    if (t.done) status = `<span class="s ok">${svg("check")}Completed</span>`;
+    else if (ms < 0) status = `<span class="s bad">${svg("warn")}Past due</span>`;
+    else if (r.short > 0) status = `<span class="s bad">${svg("warn")}Won't fit · ${dur(r.short)} short</span>`;
+    else if (doneM >= total - 1) status = `<span class="s ok">${svg("check")}All hours logged · mark it complete</span>`;
+    else if (r.late) status = `<span class="s warn">${svg("clock")}Tight · runs into the buffer</span>`;
+    else if (r.end >= 0){ const f = slotDate(ws, Math.floor(r.end / SPD), r.end % SPD); status = `<span class="s ok">${svg("check")}On track · done by ${esc(dFmt(f, {weekday:"short"}))} ${esc(tFmt(f))}</span>`; }
+    else status = `<span class="s muted">Not planned</span>`;
+    const roll = !t.done && P.behind[t.id] ? `<span class="tag roll">${svg("roll")}Rolled over ${dur(P.behind[t.id])}</span>` : "";
+    const sameWeek = due - ws < weekMs && due >= ws;
+    const whenTop = sameWeek ? `${dFmt(due, {weekday:"short"})} ${tFmt(due)}` : `${dFmt(due, {weekday:"short", month:"short", day:"numeric"})}, ${tFmt(due)}`;
+    return `<li><button type="button" class="dlrow p${t.priority} ${t.done ? "isdone" : ""}" data-edit="${esc(t.id)}" aria-label="Edit ${esc(t.title)}">
+      <span class="badge" title="Priority ${t.priority}: ${PRI[t.priority]}">${svg(t.priority)}</span>
+      <span><span class="title">${esc(t.title)}</span><br><span class="course">${esc(t.course || "")}${t.course ? " · " : ""}<span class="plabel">P${t.priority} ${PRI[t.priority]}</span></span></span>
+      <span class="when"><b class="${!t.done && ms < 0 ? "over" : ""}">${t.done ? "Done" : esc(countdown(ms))}</b>${esc(whenTop)}</span>
+      <span class="foot">
+        <span class="hbar" aria-hidden="true"><i style="width:${pctDone.toFixed(1)}%"></i><i class="plan" style="width:${pctPlan.toFixed(1)}%"></i></span>
+        <span class="status">${status}${roll}<span class="h">${dur(doneM)} / ${dur(total)}</span></span>
+      </span></button></li>`;
+  };
+  if (open.length) html += `<ul class="dl">${open.map(row).join("")}</ul>`;
+  if (done.length) html += `<details class="done-group"><summary>Completed (${done.length})</summary><ul class="dl">${done.map(row).join("")}</ul></details>`;
+  $("dlBody").innerHTML = html;
+  $("legend").innerHTML = [5,4,3,2,1].map(p => `<span class="p${p}">${svg(p)}P${p} ${PRI[p]}</span>`).join("") +
+    `<span>Bar: solid is done, light is planned</span>`;
+}
+
+/* ---------- writes ---------- */
+const queues = {};
+function write(path, fn){
+  const q = (queues[path] || Promise.resolve()).then(fn).then(() => { if (S.writeErr){ S.writeErr = null; render(); } })
+    .catch(e => { S.writeErr = e && e.code ? e.code : "error"; render(); });
+  queues[path] = q; return q;
+}
+
+function toggleSession(btn){
+  if (!S.db) return;
+  const id = btn.dataset.task, li = btn.dataset.li;
+  const cur = S.tasks.find(t => t.id === id); if (!cur) return;
+  const ws = S.plan.ws;
+  btn.setAttribute("aria-checked", li === "" ? "true" : "false");
+  write("tasks/" + id, () => {
+    const t = S.tasks.find(x => x.id === id); const log = Array.isArray(t?.log) ? [...t.log] : [];
+    if (li === ""){
+      const d = +btn.dataset.day, s = +btn.dataset.start, len = +btn.dataset.len;
+      log.push({s:fmtLocal(slotDate(ws, d, s)), e:fmtLocal(slotDate(ws, d, s + len))});
+    } else log.splice(+li, 1);
+    return S.db.doc("tasks/" + id).update({log});
+  });
+}
+
+/* ---------- task sheet ---------- */
+const sheet = $("sheet"), form = $("taskForm");
+$("prios").innerHTML = [5,4,3,2,1].map(p => `<label class="p${p}"><input type="radio" name="priority" value="${p}" id="f-p${p}">${svg(p)}<b>${p}</b>${PRI[p]}</label>`).join("");
+function openSheet(id){
+  if (!S.db){ return; }
+  const t = id ? S.tasks.find(x => x.id === id) : null;
+  S.editing = t ? t.id : null;
+  $("sheetTitle").textContent = t ? "Edit task" : "Add task";
+  $("editOnly").hidden = !t;
+  $("formErr").hidden = true;
+  const del = $("delBtn"); del.classList.remove("armed"); del.textContent = "Delete";
+  const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 2); tomorrow.setHours(23, 59, 0, 0);
+  $("f-title").value = t?.title || "";
+  $("f-course").value = t?.course || "";
+  $("f-due").value = t?.due ? fmtLocal(parseLocal(t.due)) : fmtLocal(tomorrow);
+  $("f-hours").value = t ? (+t.hours || 1) : 1;
+  $("f-mode").value = t?.mode || "auto";
+  $("f-notes").value = t?.notes || "";
+  $("f-p" + clampP(t?.priority ?? 3)).checked = true;
+  $("doneBtn").textContent = t?.done ? "Reopen task" : "Mark complete";
+  sheet.showModal();
+  $("f-title").focus();
+}
+form.addEventListener("submit", e => {
+  e.preventDefault();
+  const title = $("f-title").value.trim(), due = $("f-due").value, hours = parseFloat($("f-hours").value);
+  const err = !title ? "Give the task a name." : !parseLocal(due) ? "Pick a due date and time." : !(hours > 0) ? "Enter how many hours it will take." : "";
+  if (err){ const fe = $("formErr"); fe.textContent = err; fe.hidden = false; return; }
+  const data = {title, course:$("f-course").value.trim(), due, hours, mode:$("f-mode").value,
+    priority:+(form.querySelector('input[name="priority"]:checked')?.value || 3), notes:$("f-notes").value.trim()};
+  const id = S.editing;
+  if (id){
+    const ex = S.tasks.find(t => t.id === id);
+    if (ex?.example) data.example = false;
+    write("tasks/" + id, () => S.db.doc("tasks/" + id).update(data));
+  } else {
+    const ref = S.db.collection("tasks").doc();
+    write("tasks/" + ref.id, () => ref.set({...data, done:false, log:[], created:fmtLocal(new Date())}));
+  }
+  sheet.close();
+});
+$("cancelBtn").onclick = () => sheet.close();
+$("doneBtn").onclick = () => {
+  const id = S.editing; const t = S.tasks.find(x => x.id === id); if (!t) return;
+  write("tasks/" + id, () => S.db.doc("tasks/" + id).update({done:!t.done}));
+  sheet.close();
+};
+$("delBtn").onclick = () => {
+  const b = $("delBtn");
+  if (!b.classList.contains("armed")){ b.classList.add("armed"); b.textContent = "Tap again to delete"; return; }
+  const id = S.editing; write("tasks/" + id, () => S.db.doc("tasks/" + id).delete()); sheet.close();
+};
+
+/* ---------- events ---------- */
+document.addEventListener("click", e => {
+  const day = e.target.closest(".day"); if (day){ S.sel = +day.dataset.day; render(); return; }
+  const chk = e.target.closest(".check"); if (chk){ toggleSession(chk); return; }
+  const ed = e.target.closest("[data-edit]"); if (ed){ openSheet(ed.dataset.edit); return; }
+});
+$("addBtn").onclick = () => openSheet(null);
+$("copyTpl").onclick = async () => {
+  const b = $("copyTpl");
+  try { await navigator.clipboard.writeText($("tplText").textContent); b.textContent = "Copied"; }
+  catch { const r = document.createRange(); r.selectNodeContents($("tplText")); const s = getSelection(); s.removeAllRanges(); s.addRange(r); b.textContent = "Selected"; }
+  setTimeout(() => b.textContent = "Copy", 1600);
+};
+
+/* ---------- boot ---------- */
+let lastDay = new Date().toDateString();
+setInterval(() => {
+  const n = new Date();
+  if (n.toDateString() !== lastDay){ lastDay = n.toDateString(); S.sel = null; replan(); } else render();
+}, 60000);
+
+async function boot(){
+  render();
+  for (let i = 0; i < 30 && !window.claude?.use; i++) await new Promise(r => setTimeout(r, 100));
+  let db = null; try { db = await window.claude?.use?.("db"); } catch { db = null; }
+  if (!db){ S.noDb = true; S.got.tasks = true; replan(); return; }
+  S.db = db;
+  const timer = setTimeout(() => { S.timedOut = true; render(); }, 10000);
+  const onErr = e => { S.err = e || {code:"error"}; clearTimeout(timer); render(); };
+  const settle = snap => { if (!snap.metadata.fromCache && S.got.tasks && S.got.blocks && S.got.cfg){ S.fresh = true; S.timedOut = false; clearTimeout(timer); } };
+  db.collection("tasks").onSnapshot(snap => { S.tasks = snap.docs.map(d => ({id:d.id, ...d.data()})); S.got.tasks = true; settle(snap); replan(); }, onErr);
+  db.collection("blocks").onSnapshot(snap => { S.blocks = snap.docs.map(d => ({id:d.id, ...d.data()})); S.got.blocks = true; settle(snap); replan(); }, onErr);
+  db.doc("config/main").onSnapshot(snap => { S.cfg = snap.exists ? snap.data() : null; S.got.cfg = true; settle(snap); replan(); }, onErr);
+}
+boot();
+window.__planner = {computePlan, replan, S};
+})();
+</script>
