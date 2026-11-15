@@ -120,6 +120,9 @@ button{font:inherit;color:inherit}
 .row.due{background:transparent;border:1px dashed color-mix(in srgb,var(--pc) 55%,var(--line))}
 .row.due .title{font-weight:500}
 .row.due .title b{color:var(--pc)}
+.row.free{background:transparent;border:1px dashed var(--line);color:var(--muted);padding-block:6px}
+.row.free .title{font-weight:500;color:var(--muted)}
+.row.free .badge{color:var(--muted);background:transparent;border-color:var(--line)}
 .check{width:34px;height:34px;border-radius:9px;border:2px solid var(--line);background:var(--surface);display:grid;place-items:center;cursor:pointer;color:transparent;transition:background .15s,border-color .15s}
 .check:hover{border-color:var(--accent)}
 .check[aria-checked="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
@@ -469,7 +472,7 @@ function computePlan(now){
   if (startAt && startAt > now) nowP = Math.max(nowP, lin(ws, startAt));
 
   // baseline: the plan as it stood when the week was set up, used to spot work that rolled over
-  let base = parseLocal(cfg.plannedAt); if (!base || base < ws || base > now) base = ws;
+  let base = parseLocal(cfg.plannedAt); if (!base || base < ws) base = ws;
   const baseTasks = tasks.filter(t => { const c = parseLocal(t.created); return !c || c <= base; }).map(t => ({...t, done:false}));
   const b = run({tasks:baseTasks, blocks:S.blocks, cfg, ws, nDays, nowP:Math.max(0, lin(ws, base)), includeLogs:false, behind:{}});
   const expected = {};
@@ -556,7 +559,20 @@ function dayItems(P, d){
     const due = parseLocal(t.due); if (!due || t.done) continue;
     if (dayIndex(P.ws, due) === d) items.push({type:"due", s:slotOf(due), e:slotOf(due), t});
   }
-  const ord = {fixed:0, session:1, due:2};
+  // unallocated: gaps of 15+ minutes inside the working window not covered by a block or session
+  const today = dayIndex(P.ws, new Date());
+  if (d >= today){
+    const dow = (P.ws.getDay() + d) % 7, we = dow === 0 || dow === 6, cfg = P.cfg;
+    let cur = Math.floor(hm(we ? cfg.weekendStart : cfg.weekdayStart) / SLOT);
+    const end = Math.ceil(hm(we ? cfg.weekendEnd : cfg.weekdayEnd) / SLOT);
+    if (d === today) cur = Math.max(cur, Math.ceil(slotOf(new Date()) + 0.0001));
+    const cov = items.filter(i => i.type !== "due").map(i => [i.s, i.e]).sort((a, b) => a[0] - b[0]);
+    const gaps = [];
+    for (const [a, b] of cov){ if (a - cur >= 3 && a <= end) gaps.push([cur, Math.min(a, end)]); cur = Math.max(cur, b); }
+    if (end - cur >= 3) gaps.push([cur, end]);
+    for (const [a, b] of gaps) if (b - a >= 3) items.push({type:"free", s:a, e:b});
+  }
+  const ord = {fixed:0, session:1, free:2, due:3};
   items.sort((a, b) => a.s - b.s || ord[a.type] - ord[b.type]);
   return items;
 }
@@ -619,7 +635,13 @@ function renderDay(P, now){
     for (const s of P.sessions) if (!s.done && firstPlanned[s.task] == null) firstPlanned[s.task] = s;
     for (const it of items){
       const st = slotDate(P.ws, d, it.s), en = slotDate(P.ws, d, it.e);
-      if (it.type === "fixed"){
+      if (it.type === "free"){
+        html += `<li class="row free">
+          <div class="time">${esc(tFmt(st))}<small>${esc(tFmt(en))}</small></div>
+          <span class="badge">${svg("clock")}</span>
+          <div><div class="title">Unallocated · ${dur((it.e - it.s) * SLOT)}</div></div>
+          <span></span></li>`;
+      } else if (it.type === "fixed"){
         const b = it.b, hard = isHard(b);
         const kind = ({class:"Class", lab:"Lab", work:"Work shift", study:"Study block", personal:"Personal"})[b.kind] || "Busy";
         html += `<li class="row fixed ${hard ? "locked" : ""}">
