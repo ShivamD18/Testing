@@ -27,6 +27,7 @@ Times are local wall-clock strings: `YYYY-MM-DDTHH:MM`. Weekdays are numbered 0 
 | `done` | `true` when finished |
 | `log` | sessions the user ticked off: `[{s, e}]`. The page writes this field; Claude doesn't edit it. |
 | `created` | when the task was added (used to detect rolled-over work) |
+| `pinned` | optional `[{s, e}]` sessions at exact times the user asked for; the rest of `hours` is planned automatically |
 
 ### `blocks/<id>` (fixed commitments)
 | field | meaning |

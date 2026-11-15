@@ -389,8 +389,21 @@ function run({tasks, blocks, cfg, ws, nDays, nowP, includeLogs, behind}){
     mark(d, s, len); load[d] += len * SLOT; sessions.push({task:t.id, day:d, start:s, len, done:true, li});
   });
 
+  // pinned sessions: work the user asked to do at an exact time
+  const pinMin = {}, pinEnd = {};
+  for (const t of tasks) if (!t.done) (t.pinned || []).forEach(pn => {
+    const sd = parseLocal(pn.s), ed = parseLocal(pn.e); if (!sd || !ed) return;
+    if (includeLogs && (t.log || []).some(l => l.s === pn.s)) return;
+    const d = dayIndex(ws, sd), s = slotOf(sd); let len = Math.round((ed - sd) / 6e4 / SLOT);
+    if (d < 0 || d >= nDays || len <= 0 || d * SPD + s + len <= nowP) return;
+    len = Math.min(len, SPD - s);
+    mark(d, s, len); load[d] += len * SLOT; sessions.push({task:t.id, day:d, start:s, len, pinned:true});
+    pinMin[t.id] = (pinMin[t.id] || 0) + len * SLOT; pinEnd[t.id] = Math.max(pinEnd[t.id] ?? -1, d * SPD + s + len);
+  });
+  for (const t of tasks) if (pinMin[t.id] != null) res[t.id] = {need:0, placed:pinMin[t.id], late:false, forced:false, short:0, end:pinEnd[t.id], single:false};
+
   const active = tasks.filter(t => !t.done).map(t => ({t, due:parseLocal(t.due),
-    R:Math.ceil(Math.max(0, t.hours * 60 - (includeLogs ? logMinutes(t) : 0)) / SLOT)})).filter(x => x.due && x.R > 0);
+    R:Math.ceil(Math.max(0, t.hours * 60 - (includeLogs ? logMinutes(t) : 0) - (pinMin[t.id] || 0)) / SLOT)})).filter(x => x.due && x.R > 0);
   active.sort((a, b) => b.t.priority - a.t.priority || (behind[b.t.id] ? 1 : 0) - (behind[a.t.id] ? 1 : 0) || a.due - b.due);
   // daily load target: spread the total work evenly over the days left until the last deadline (at least 2h/day)
   const nowDay = Math.floor(nowP / SPD);
@@ -402,7 +415,7 @@ function run({tasks, blocks, cfg, ws, nDays, nowP, includeLogs, behind}){
     const id = x.t.id, dueP = lin(ws, x.due);
     const tgt = new Date(x.due); tgt.setDate(tgt.getDate() - (x.t.priority === 5 ? cfg.bufferDaysP5 : cfg.bufferDays));
     const tgtP = Math.max(nowP, lin(ws, tgt));
-    let R = x.R; const info = {need:R * SLOT, placed:0, late:false, forced:false, short:0, end:-1, single:false};
+    let R = x.R; const info = {need:R * SLOT, placed:0, late:false, forced:false, short:0, end:pinEnd[id] ?? -1, single:false};
     const put = (d, s, len, late) => { mark(d, s, len); load[d] += len * SLOT; sessions.push({task:id, day:d, start:s, len, late}); R -= len; info.placed += len * SLOT; if (late) info.late = true; info.end = Math.max(info.end, d * SPD + s + len); };
     const phases = [[tgtP,false,false],[tgtP,true,false],[dueP,false,true],[dueP,true,true]];
     const mode = x.t.mode || "auto";
@@ -451,7 +464,9 @@ function computePlan(now){
   let lastDay = 14;
   for (const t of tasks){ const due = parseLocal(t.due); if (due && !t.done) lastDay = Math.max(lastDay, dayIndex(ws, due) + 1); }
   const nDays = Math.min(35, lastDay);
-  const nowP = Math.max(0, dayIndex(ws, now) * SPD + Math.ceil((now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60) / SLOT));
+  let nowP = Math.max(0, dayIndex(ws, now) * SPD + Math.ceil((now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60) / SLOT));
+  const startAt = parseLocal(cfg.plannedAt); // a week set up ahead of time starts planning at plannedAt
+  if (startAt && startAt > now) nowP = Math.max(nowP, lin(ws, startAt));
 
   // baseline: the plan as it stood when the week was set up, used to spot work that rolled over
   let base = parseLocal(cfg.plannedAt); if (!base || base < ws || base > now) base = ws;
@@ -625,6 +640,7 @@ function renderDay(P, now){
         const ov = overlapName(P, d, it.s, it.e);
         const tags = [];
         if (s.of > 1) tags.push(`<span>Part ${s.n} of ${s.of}</span>`);
+        if (s.pinned) tags.push(`<span class="tag">Set time</span>`);
         if (ov) tags.push(`<span class="tag">During ${esc(ov)}</span>`);
         if (s.late) tags.push(`<span class="tag warn">Inside buffer</span>`);
         if (!s.done && P.behind[t.id] && firstPlanned[t.id] === s) tags.push(`<span class="tag roll">${svg("roll")}Rolled over</span>`);
