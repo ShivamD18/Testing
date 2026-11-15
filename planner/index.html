@@ -106,6 +106,7 @@ button{font:inherit;color:inherit}
 .weeknav{display:inline-flex;margin-top:10px;border:1px solid var(--glass-line);border-radius:10px;overflow:hidden;background:var(--glass);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
 .wk{border:0;background:transparent;padding:6px 13px;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer}
 .wk[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.themebtn{margin:10px 0 0 8px;vertical-align:top;border:1px solid var(--glass-line);border-radius:10px;background:var(--glass);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);padding:6px 12px;font-size:13px;font-weight:600;color:var(--ink);cursor:pointer}
 .stats{display:flex;flex-wrap:wrap;gap:8px}
 .stat{display:flex;flex-direction:column;padding:7px 13px;border-radius:12px;background:var(--glass);border:1px solid var(--glass-line);min-width:100px;-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);box-shadow:var(--shadow)}
 .stat b{font-family:var(--f-mono);font-size:18px;font-weight:600;font-variant-numeric:tabular-nums}
@@ -292,6 +293,7 @@ dialog::backdrop{background:rgba(6,12,26,.45);-webkit-backdrop-filter:blur(3px);
         <button type="button" class="wk" data-off="0">This week</button>
         <button type="button" class="wk" data-off="7">Next week</button>
       </div>
+      <button type="button" class="themebtn" id="themeBtn" aria-label="Change planner theme"></button>
     </div>
     <div class="stats" id="stats"></div>
     <button class="btn primary" id="addBtn" type="button">+ Add task</button>
@@ -1010,7 +1012,7 @@ function startSnow(){
   const size = () => { const dpr = Math.min(2, devicePixelRatio || 1); W = innerWidth; H = innerHeight; cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); cx.setTransform(dpr, 0, 0, dpr, 0, 0); fl = Array.from({length:Math.min(120, Math.round(W * H / 15000))}, () => mk(true)); };
   const draw = () => { cx.clearRect(0, 0, W, H); cx.fillStyle = color; for (const f of fl){ cx.globalAlpha = f.a; cx.beginPath(); cx.arc(f.x, f.y, f.r, 0, 6.283); cx.fill(); } cx.globalAlpha = 1; };
   const step = () => {
-    if (++frame % 120 === 0) readColor();
+    if (++frame % 30 === 0) readColor();
     for (const f of fl){ f.y += f.v * (0.6 + f.r * 0.35); f.d += f.s; f.x += Math.sin(f.d) * 0.35; if (f.y > H + 6) Object.assign(f, mk(false)); if (f.x < -6) f.x = W + 6; else if (f.x > W + 6) f.x = -6; }
     draw(); requestAnimationFrame(step);
   };
@@ -1019,6 +1021,20 @@ function startSnow(){
   addEventListener("resize", () => { size(); if (reduce) draw(); });
   if (reduce) draw(); else requestAnimationFrame(step);
 }
+const THEMES = [["auto","🖥️ Match Claude"],["light","☀️ Light"],["dark","🌙 Dark"]];
+const hostTheme = document.documentElement.getAttribute("data-theme");
+function applyTheme(t){
+  const root = document.documentElement;
+  if (t === "auto"){ if (hostTheme) root.setAttribute("data-theme", hostTheme); else root.removeAttribute("data-theme"); }
+  else root.setAttribute("data-theme", t);
+  $("themeBtn").textContent = THEMES.find(x => x[0] === t)[1];
+  $("themeBtn").dataset.t = t;
+  try { localStorage.setItem("planner-theme", t); } catch {}
+}
+let savedTheme = "auto"; try { savedTheme = localStorage.getItem("planner-theme") || "auto"; } catch {}
+if (!THEMES.some(x => x[0] === savedTheme)) savedTheme = "auto";
+applyTheme(savedTheme);
+$("themeBtn").onclick = () => { const i = THEMES.findIndex(x => x[0] === $("themeBtn").dataset.t); applyTheme(THEMES[(i + 1) % THEMES.length][0]); };
 let rz; addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(buildGarland, 150); });
 try { buildScene(); buildGarland(); startSnow(); } catch (e) { console.warn("scene", e); }
 
