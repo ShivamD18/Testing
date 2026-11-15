@@ -344,7 +344,12 @@ function countdown(ms){
 function blockDays(b, ws, nDays){
   if (b.date){ const d = parseLocal(b.date); if (!d) return []; const i = dayIndex(ws, d); return i >= 0 && i < nDays ? [i] : []; }
   const days = Array.isArray(b.days) ? b.days.map(Number) : [];
-  const out = []; for (let i = 0; i < nDays; i++) if (days.includes((ws.getDay() + i) % 7)) out.push(i);
+  const from = parseLocal(b.from), until = parseLocal(b.until);
+  const out = []; for (let i = 0; i < nDays; i++){
+    if (!days.includes((ws.getDay() + i) % 7)) continue;
+    const dt = dayDate(ws, i); if ((from && dt < from) || (until && dt > until)) continue;
+    out.push(i);
+  }
   return out;
 }
 const isHard = b => b.hard != null ? !!b.hard : b.kind !== "class";

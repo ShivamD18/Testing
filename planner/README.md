@@ -33,7 +33,7 @@ Times are local wall-clock strings: `YYYY-MM-DDTHH:MM`. Weekdays are numbered 0 
 |---|---|
 | `title`, `location` | text |
 | `kind` | `"class"` (work may overlap), `"lab"`, `"work"`, `"study"`, `"personal"`, `"other"` (all locked) |
-| `days` | weekly repeat, e.g. `[1,3,5]`, **or** `date: "2026-11-18"` for a one-off |
+| `days` | weekly repeat, e.g. `[1,3,5]` (optional `from`/`until` dates limit the range), **or** `date: "2026-11-18"` for a one-off |
 | `start`, `end` | `"14:30"` |
 | `hard` | optional override for whether work may be scheduled over it |
 
